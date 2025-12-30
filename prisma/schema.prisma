@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Ana Kategoriler: Kadın, Erkek, Çocuk, İndirim vb.
+model MainCategory {
+  id             Int           @id @default(autoincrement())
+  name           String
+  description    String?
+  imageUrl       String?
+  isShowOnNavbar Boolean       @default(false) 
+  
+  subCategories  SubCategory[]
+  createdAt      DateTime      @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Alt Kategoriler: Gömlek, Pantolon, Etek vb.
+model SubCategory {
+  id             Int          @id @default(autoincrement())
+  name           String
+  
+  // Hangi ana kategoriye ait? (Örn: Kadın -> Gömlek)
+  mainCategoryId Int
+  mainCategory   MainCategory @relation(fields: [mainCategoryId], references: [id], onDelete: Cascade)
+
+  // Bir ürün birden fazla alt kategoride olabilir (Many-to-Many)
+  products       Product[]    
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  imageUrl    String?  
+  isFeatured  Boolean  @default(false)
+  
+  categories  SubCategory[] 
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  variants    ProductVariant[]
+  favoritedBy Favorite[]
+}
+
+model ProductVariant {
+  id        Int     @id @default(autoincrement())
+  size      String  // Örn: "S", "M", "L", "42", "44"
+  color     String  @default("Standart")
+  stock     Int     // O bedene ait stok
+  vImageUrl String?
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId Int
+}
+
+
+// Admin girişi için basit bir yapı
+model Admin {
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  password String
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique // Aynı mail ile tekrar kayıt olunamaz
+  password  String
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  favorites Favorite[]
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId]) // Aynı kullanıcı aynı ürünü 2 kere favorileyemesin
+}
