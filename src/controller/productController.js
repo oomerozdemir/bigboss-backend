@@ -100,7 +100,7 @@ export const createProduct = async (req, res) => {
       return {
         size: variant.size,
         color: variant.color || "Standart", // Renk yoksa standart yazsın
-        stock: parseInt(variant.stock),
+       stock: parseInt(variant.stock) || 0,
         vImageUrl: vUrl // Cloudinary linki (yoksa null)
       };
     }));
