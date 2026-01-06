@@ -77,6 +77,7 @@ model User {
   isAdmin   Boolean  @default(false)
   createdAt DateTime @default(now())
   favorites Favorite[]
+  addresses Address[]
 }
 
 model Favorite {
@@ -91,4 +92,19 @@ model Favorite {
   createdAt DateTime @default(now())
 
   @@unique([userId, productId]) // Aynı kullanıcı aynı ürünü 2 kere favorileyemesin
+}
+
+
+model Address {
+  id        Int      @id @default(autoincrement())
+  title     String   // Örn: Ev, İş
+  address   String   // Açık adres metni
+  city      String   // Şehir
+  phone     String   // İletişim numarası
+  
+  // Hangi kullanıcıya ait?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  createdAt DateTime @default(now())
 }

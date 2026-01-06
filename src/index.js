@@ -5,6 +5,7 @@ import productRoutes from './routes/productRoutes.js';
 import authRoutes from "./routes/authRoutes.js"
 import categoryRoutes from "./routes/categoryRoutes.js";
 import favoriteRoutes from "./routes/favoriteRoutes.js"
+import addressRoutes from "./routes/addressRoutes.js"
 
 dotenv.config(); 
 
@@ -25,6 +26,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes); 
 app.use('/api/categories', categoryRoutes);
 app.use('/api/favorites', favoriteRoutes);
+app.use('/api/address', addressRoutes);
 
 app.get('/', (req, res) => {
   res.send('API Çalışıyor!');
