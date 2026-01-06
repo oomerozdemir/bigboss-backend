@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 // Kullanıcının adreslerini getir
 export const getAddresses = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id; // DÜZELTME: .userId yerine .id
     const addresses = await prisma.address.findMany({
       where: { userId: parseInt(userId) },
       orderBy: { createdAt: 'desc' }
@@ -19,7 +19,7 @@ export const getAddresses = async (req, res) => {
 // Yeni adres ekle
 export const addAddress = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id; // DÜZELTME: .userId yerine .id
     const { title, address, city, phone } = req.body;
 
     if (!address || !city || !phone) {
@@ -46,7 +46,7 @@ export const addAddress = async (req, res) => {
 // Adres sil
 export const deleteAddress = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id; // DÜZELTME: .userId yerine .id
     const addressId = parseInt(req.params.id);
 
     const address = await prisma.address.findFirst({
