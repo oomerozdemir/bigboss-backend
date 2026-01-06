@@ -1,22 +1,23 @@
-const { PrismaClient } = require('@prisma/client');
+import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Kullanıcının adreslerini getir
-exports.getAddresses = async (req, res) => {
+export const getAddresses = async (req, res) => {
   try {
-    const userId = req.user.userId; // Auth middleware'den gelen ID
+    const userId = req.user.userId;
     const addresses = await prisma.address.findMany({
       where: { userId: parseInt(userId) },
       orderBy: { createdAt: 'desc' }
     });
     res.json(addresses);
   } catch (error) {
+    console.error("Adres getirme hatası:", error);
     res.status(500).json({ error: "Adresler çekilemedi." });
   }
 };
 
 // Yeni adres ekle
-exports.addAddress = async (req, res) => {
+export const addAddress = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { title, address, city, phone } = req.body;
@@ -27,7 +28,7 @@ exports.addAddress = async (req, res) => {
 
     const newAddress = await prisma.address.create({
       data: {
-        title: title || "Ev", // Başlık girilmezse varsayılan 'Ev' olsun
+        title: title || "Ev",
         address,
         city,
         phone,
@@ -37,17 +38,17 @@ exports.addAddress = async (req, res) => {
 
     res.status(201).json(newAddress);
   } catch (error) {
+    console.error("Adres ekleme hatası:", error);
     res.status(500).json({ error: "Adres eklenirken hata oluştu." });
   }
 };
 
 // Adres sil
-exports.deleteAddress = async (req, res) => {
+export const deleteAddress = async (req, res) => {
   try {
     const userId = req.user.userId;
     const addressId = parseInt(req.params.id);
 
-    // Önce adresin bu kullanıcıya ait olup olmadığını kontrol et
     const address = await prisma.address.findFirst({
         where: { id: addressId, userId: parseInt(userId) }
     });
@@ -62,6 +63,7 @@ exports.deleteAddress = async (req, res) => {
 
     res.json({ message: "Adres başarıyla silindi." });
   } catch (error) {
+    console.error("Adres silme hatası:", error);
     res.status(500).json({ error: "Adres silinemedi." });
   }
 };
