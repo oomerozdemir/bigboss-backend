@@ -51,3 +51,22 @@ export const getMyOrders = async (req, res) => {
     res.status(500).json({ error: "Siparişler getirilemedi." });
   }
 };
+
+// --- [YENİ] TÜM SİPARİŞLERİ GETİR (ADMİN İÇİN) ---
+export const getAllOrders = async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      include: {
+        user: { select: { name: true, email: true } }, // Kullanıcı adını da getir
+        items: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(orders);
+  } catch (error) {
+    console.error("Admin Sipariş Hatası:", error);
+    res.status(500).json({ error: "Siparişler listelenemedi." });
+  }
+};
