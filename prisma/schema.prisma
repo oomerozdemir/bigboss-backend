@@ -119,6 +119,12 @@ enum OrderStatus {
   IPTAL_EDILDI
 }
 
+enum ReturnStatus {
+  BEKLIYOR
+  ONAYLANDI
+  REDDEDILDI
+}
+
 
 model Order {
   id              Int         @id @default(autoincrement())
@@ -129,6 +135,7 @@ model Order {
   total           Decimal     @db.Decimal(10, 2)       // Toplam Tutar
   addressSnapshot String      // Sipariş anındaki adres metni (Adres silinse bile kalsın diye)
   
+  returnRequest   ReturnRequest?
   items           OrderItem[]
   createdAt       DateTime    @default(now())
 }
@@ -146,4 +153,15 @@ model OrderItem {
   variant   String?  // "S / Siyah" gibi
 }
 
+
+model ReturnRequest {
+  id        Int          @id @default(autoincrement())
+  
+  orderId   Int          @unique // Bir sipariş için tek talep
+  order     Order        @relation(fields: [orderId], references: [id])
+  
+  status    ReturnStatus @default(BEKLIYOR)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
 
