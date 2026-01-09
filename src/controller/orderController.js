@@ -78,7 +78,8 @@ export const getMyOrders = async (req, res) => {
       include: { 
         items: {
           include: { product: true } 
-        } 
+        } ,
+        returnRequest: true
       },
       orderBy: { createdAt: 'desc' }
     });
