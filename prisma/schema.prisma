@@ -111,12 +111,21 @@ model Address {
   createdAt DateTime @default(now())
 }
 
+enum OrderStatus {
+  SIPARIS_ALINDI
+  HAZIRLANIYOR
+  KARGOLANDI
+  TESLIM_EDILDI
+  IPTAL_EDILDI
+}
+
+
 model Order {
   id              Int         @id @default(autoincrement())
   user            User        @relation(fields: [userId], references: [id])
   userId          Int
   
-  status          String      @default("Hazırlanıyor") // Sipariş Durumu
+  status          OrderStatus @default(SIPARIS_ALINDI)
   total           Decimal     @db.Decimal(10, 2)       // Toplam Tutar
   addressSnapshot String      // Sipariş anındaki adres metni (Adres silinse bile kalsın diye)
   
@@ -136,3 +145,5 @@ model OrderItem {
   quantity  Int
   variant   String?  // "S / Siyah" gibi
 }
+
+
