@@ -7,9 +7,8 @@ import categoryRoutes from "./routes/categoryRoutes.js";
 import favoriteRoutes from "./routes/favoriteRoutes.js"
 import addressRoutes from "./routes/addressRoutes.js"
 import orderRoutes from './routes/orderRoutes.js';
-import returnRoutes from "./routes/returnRoutes.js";
-import couponRoutes from "./routes/couponRoutes.js"
-
+import returnRoutes from './routes/returnRoutes.js'; 
+import couponRoutes from './routes/couponRoutes.js';
 dotenv.config(); 
 
 const app = express();
@@ -31,7 +30,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/address', addressRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/returns', returnRoutes);
+app.use('/api/returns', returnRoutes); 
 app.use('/api/coupons', couponRoutes);
 
 app.get('/', (req, res) => {
