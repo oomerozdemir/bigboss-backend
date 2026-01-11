@@ -117,6 +117,7 @@ enum OrderStatus {
   KARGOLANDI
   TESLIM_EDILDI
   IPTAL_EDILDI
+  IADE_EDILDI
 }
 
 enum ReturnStatus {
