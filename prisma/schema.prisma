@@ -137,7 +137,7 @@ model Order {
   addressSnapshot String      // Sipariş anındaki adres metni (Adres silinse bile kalsın diye)
   
   couponCode      String?     
-  discountAmount  Decimal
+  discountAmount  Decimal     @db.Decimal(10, 2) @default(0)
 
   returnRequest   ReturnRequest?
   items           OrderItem[]
