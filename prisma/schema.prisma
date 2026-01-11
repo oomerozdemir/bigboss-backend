@@ -136,6 +136,9 @@ model Order {
   total           Decimal     @db.Decimal(10, 2)       // Toplam Tutar
   addressSnapshot String      // Sipariş anındaki adres metni (Adres silinse bile kalsın diye)
   
+  couponCode      String?     
+  discountAmount  Decimal
+
   returnRequest   ReturnRequest?
   items           OrderItem[]
   createdAt       DateTime    @default(now())

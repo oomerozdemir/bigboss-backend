@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 // --- SİPARİŞ OLUŞTUR (Stok Kontrolü ve Düşümü İle) ---
 export const createOrder = async (req, res) => {
   const userId = req.user.id;
-  const { items, total, address } = req.body; 
+  const { items, total, address, couponCode, discountAmount } = req.body; 
   
   // Transaction: Ya hepsi olur ya hiçbiri olmaz (Stok düşerken hata olursa siparişi iptal eder)
   try {
@@ -41,12 +41,17 @@ export const createOrder = async (req, res) => {
       }
 
       // 2. Siparişi Oluştur
-      const newOrder = await prisma.order.create({
+ const newOrder = await prisma.order.create({
         data: {
           userId,
           total,
           addressSnapshot: address,
-          status: "SIPARIS_ALINDI", // Enum varsayılanı
+          status: "SIPARIS_ALINDI",
+          
+          // YENİ: Kupon bilgilerini kaydediyoruz
+          couponCode: couponCode || null,
+          discountAmount: discountAmount || 0,
+
           items: {
             create: items.map(item => ({
               productId: item.productId,
