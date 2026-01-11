@@ -31,6 +31,7 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/address', addressRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/returns', returnRoutes);
+app.use('/api/coupons', couponRoutes);
 
 app.get('/', (req, res) => {
   res.send('API Çalışıyor!');

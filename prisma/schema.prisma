@@ -166,3 +166,20 @@ model ReturnRequest {
   updatedAt DateTime     @updatedAt
 }
 
+enum DiscountType {
+  PERCENTAGE  // Yüzde İndirim (Örn: %10)
+  FIXED_AMOUNT // Sabit Tutar (Örn: 100 TL)
+}
+
+model Coupon {
+  id             Int          @id @default(autoincrement())
+  code           String       @unique // Kupon Kodu (Örn: YAZ2024)
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(10, 2) // İndirim miktarı
+  minOrderAmount Decimal?     @db.Decimal(10, 2) // Minimum sepet tutarı (Opsiyonel)
+  expirationDate DateTime?    // Son kullanma tarihi
+  isActive       Boolean      @default(true)
+  usageLimit     Int?         // Kaç kere kullanılabilir (Opsiyonel)
+  
+  createdAt      DateTime     @default(now())
+}
