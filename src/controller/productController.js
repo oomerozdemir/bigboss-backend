@@ -29,24 +29,54 @@ const uploadToCloudinary = async (filePath) => {
 // --- TÜM ÜRÜNLERİ GETİR ---
 export const getAllProducts = async (req, res) => {
   try {
-    const { isAdmin } = req.query; // ?isAdmin=true ise hepsini getir
+    // 1. Query Parametrelerini Al
+    const { isAdmin, page = 1, limit = 20, search = "" } = req.query;
 
-    const whereClause = isAdmin === 'true' ? {} : { isActive: true };
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
+    // 2. Filtreleri Oluştur
+    const whereClause = {
+        AND: [
+            isAdmin === 'true' ? {} : { isActive: true }, // Admin değilse sadece aktifleri göster
+            search ? {
+                OR: [
+                    { name: { contains: search, mode: 'insensitive' } },
+                    { description: { contains: search, mode: 'insensitive' } }
+                ]
+            } : {}
+        ]
+    };
+
+    // 3. Toplam Kayıt Sayısını Bul (Sayfalama hesaplaması için)
+    const totalCount = await prisma.product.count({ where: whereClause });
+
+    // 4. Sadece İlgili Sayfanın Verilerini Çek
     const products = await prisma.product.findMany({
-      where: whereClause, // FİLTRE EKLENDİ
+      where: whereClause,
       include: {
-        categories: {
-          include: {
-            mainCategory: true
-          }
-        },
+        categories: { include: { mainCategory: true } },
         variants: true
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      skip: skip,      // Kaç tane atla
+      take: limitNum   // Kaç tane al
     });
-    res.json(products);
+
+    // 5. Veriyi ve Meta Bilgileri Döndür
+    res.json({
+        products,
+        meta: {
+            totalCount,
+            totalPages: Math.ceil(totalCount / limitNum),
+            currentPage: pageNum,
+            limit: limitNum
+        }
+    });
+
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Ürünler getirilemedi." });
   }
 };
