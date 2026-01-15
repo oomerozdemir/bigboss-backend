@@ -29,22 +29,24 @@ const uploadToCloudinary = async (filePath) => {
 // --- TÜM ÜRÜNLERİ GETİR ---
 export const getAllProducts = async (req, res) => {
   try {
+    const { isAdmin } = req.query; // ?isAdmin=true ise hepsini getir
+
+    const whereClause = isAdmin === 'true' ? {} : { isActive: true };
+
     const products = await prisma.product.findMany({
+      where: whereClause, // FİLTRE EKLENDİ
       include: {
         categories: {
           include: {
             mainCategory: true
           }
         },
-        variants: true // Beden/Renk/Resim bilgilerini getirir
+        variants: true
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { createdAt: 'desc' }
     });
     res.json(products);
   } catch (error) {
-    console.error("Ürünleri getirme hatası:", error);
     res.status(500).json({ error: "Ürünler getirilemedi." });
   }
 };
@@ -215,4 +217,60 @@ export const updateProduct = async (req, res) => {
     }
     res.status(500).json({ error: "Güncellenemedi." });
   }
+};
+
+
+// --- YENİ: TOPLU SİLME ---
+export const deleteProductsBulk = async (req, res) => {
+    const { ids } = req.body; // [1, 5, 8] gibi ID dizisi
+    try {
+        await prisma.product.deleteMany({
+            where: {
+                id: { in: ids.map(id => parseInt(id)) }
+            }
+        });
+        res.json({ message: "Seçili ürünler silindi." });
+    } catch (error) {
+        res.status(500).json({ error: "Toplu silme başarısız." });
+    }
+};
+
+// --- YENİ: TOPLU KATEGORİ EKLEME ---
+export const addProductsToCategoryBulk = async (req, res) => {
+    const { productIds, categoryId } = req.body;
+    try {
+        // Prisma'da updateMany ile relation güncellemek zor olduğu için transaction kullanıyoruz
+        await prisma.$transaction(
+            productIds.map(id => 
+                prisma.product.update({
+                    where: { id: parseInt(id) },
+                    data: {
+                        categories: {
+                            connect: { id: parseInt(categoryId) }
+                        }
+                    }
+                })
+            )
+        );
+        res.json({ message: "Ürünler kategoriye eklendi." });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: "Kategori güncellemesi başarısız." });
+    }
+};
+
+// --- YENİ: DURUM GÜNCELLEME (GİZLE/GÖSTER) ---
+export const updateProductStatus = async (req, res) => {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    
+    try {
+        const product = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: { isActive }
+        });
+        res.json(product);
+    } catch (error) {
+        res.status(500).json({ error: "Durum güncellenemedi." });
+    }
 };

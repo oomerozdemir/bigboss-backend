@@ -114,20 +114,3 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// --- [EKSİK OLAN PARÇA] SİPARİŞ DURUMUNU GÜNCELLE ---
-export const updateOrderStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body; // Örn: "KARGOLANDI"
-
-    const updatedOrder = await prisma.order.update({
-      where: { id: parseInt(id) },
-      data: { status }
-    });
-
-    res.json(updatedOrder);
-  } catch (error) {
-    console.error("Güncelleme hatası:", error);
-    res.status(500).json({ error: "Durum güncellenemedi." });
-  }
-};

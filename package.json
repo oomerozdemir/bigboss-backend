@@ -18,8 +18,12 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "ratelimit": "^0.0.4",
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.23",

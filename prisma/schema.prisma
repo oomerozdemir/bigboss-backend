@@ -49,6 +49,7 @@ model Product {
   variants    ProductVariant[]
   favoritedBy Favorite[]
   orderItems  OrderItem[]
+  isActive    Boolean  @default(true)
 }
 
 model ProductVariant {
