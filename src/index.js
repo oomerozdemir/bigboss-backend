@@ -1,12 +1,10 @@
 import express, { json } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv'; 
-
-// --- GÜVENLİK PAKETLERİ İMPORT ---
+import dotenv from 'dotenv';
+// --- GÜVENLİK PAKETLERİ ---
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import hpp from 'hpp';
-import xss from 'xss-clean';
 
 
 import productRoutes from './routes/productRoutes.js'; 
@@ -23,15 +21,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// 1. TRUST PROXY (Render/Cloudflare için ZORUNLU)
+app.set('trust proxy', 1); 
+
+// 2. HELMET (Güvenlik Başlıkları)
 app.use(helmet());
 
+// 3. RATE LIMITING (DDoS Koruması)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 dakika
-  max: 100, // Her IP için 15 dakikada maksimum 100 istek
+  max: 100, // IP başına limit
+  standardHeaders: true,
+  legacyHeaders: false,
   message: "Çok fazla istek gönderdiniz, lütfen 15 dakika sonra tekrar deneyin."
 });
 app.use('/api', limiter);
 
+// 4. CORS
 app.use(cors({
   origin: [
     "http://localhost:5173",              
@@ -41,12 +47,13 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(xss());
+app.use(json({ limit: '10kb' })); 
+
+// 5. PARAMETRE KİRLİLİĞİ ÖNLEME
 app.use(hpp());
 
-app.use(json());
+// Rotalar
 app.use('/api/auth', authRoutes);
-
 app.use('/api/products', productRoutes); 
 app.use('/api/categories', categoryRoutes);
 app.use('/api/favorites', favoriteRoutes);
