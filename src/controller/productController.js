@@ -16,11 +16,9 @@ const uploadToCloudinary = async (filePath) => {
     const result = await cloudinary.uploader.upload(filePath, {
       folder: "bigboss_products"
     });
-    // Yükleme başarılıysa sunucudan sil
     fs.unlinkSync(filePath);
     return result.secure_url;
   } catch (error) {
-    // Hata olursa da silmeye çalış
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     throw error;
   }
@@ -29,17 +27,15 @@ const uploadToCloudinary = async (filePath) => {
 // --- TÜM ÜRÜNLERİ GETİR ---
 export const getAllProducts = async (req, res) => {
   try {
-    // 1. Query Parametrelerini Al
     const { isAdmin, page = 1, limit = 20, search = "" } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // 2. Filtreleri Oluştur
     const whereClause = {
         AND: [
-            isAdmin === 'true' ? {} : { isActive: true }, // Admin değilse sadece aktifleri göster
+            isAdmin === 'true' ? {} : { isActive: true },
             search ? {
                 OR: [
                     { name: { contains: search, mode: 'insensitive' } },
@@ -49,10 +45,8 @@ export const getAllProducts = async (req, res) => {
         ]
     };
 
-    // 3. Toplam Kayıt Sayısını Bul (Sayfalama hesaplaması için)
     const totalCount = await prisma.product.count({ where: whereClause });
 
-    // 4. Sadece İlgili Sayfanın Verilerini Çek
     const products = await prisma.product.findMany({
       where: whereClause,
       include: {
@@ -60,11 +54,10 @@ export const getAllProducts = async (req, res) => {
         variants: true
       },
       orderBy: { createdAt: 'desc' },
-      skip: skip,      // Kaç tane atla
-      take: limitNum   // Kaç tane al
+      skip: skip,
+      take: limitNum
     });
 
-    // 5. Veriyi ve Meta Bilgileri Döndür
     res.json({
         products,
         meta: {
@@ -76,7 +69,7 @@ export const getAllProducts = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("getAllProducts Error:", error);
     res.status(500).json({ error: "Ürünler getirilemedi." });
   }
 };
@@ -99,6 +92,7 @@ export const getProductById = async (req, res) => {
     if (!product) return res.status(404).json({ error: "Ürün bulunamadı." });
     res.json(product);
   } catch (error) {
+    console.error("getProductById Error:", error);
     res.status(500).json({ error: "Ürün detayı getirilemedi." });
   }
 };
@@ -106,9 +100,7 @@ export const getProductById = async (req, res) => {
 // --- YENİ ÜRÜN EKLE (Admin) ---
 export const createProduct = async (req, res) => {
   try {
-    // 1. Ana Resmi Bul ve Yükle ('image' alan adıyla gelen dosya)
     let mainImageUrl = "";
-    // req.files bir array olarak gelir (upload.any() sayesinde)
     const mainFile = req.files?.find(f => f.fieldname === 'image');
     
     if (mainFile) {
@@ -118,7 +110,6 @@ export const createProduct = async (req, res) => {
     const { name, description, price, isFeatured, categoryIds, variants } = req.body;
     
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
-
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
 
     const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
@@ -131,9 +122,9 @@ export const createProduct = async (req, res) => {
 
       return {
         size: variant.size,
-        color: variant.color || "Standart", // Renk yoksa standart yazsın
-       stock: parseInt(variant.stock) || 0,
-        vImageUrl: vUrl // Cloudinary linki (yoksa null)
+        color: variant.color || "Standart",
+        stock: parseInt(variant.stock) || 0,
+        vImageUrl: vUrl
       };
     }));
 
@@ -159,7 +150,7 @@ export const createProduct = async (req, res) => {
 
     res.status(201).json(newProduct);
   } catch (error) {
-    console.error("Create Error:", error);
+    console.error("createProduct Error:", error);
     if (req.files) {
         req.files.forEach(file => {
             if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -178,6 +169,7 @@ export const deleteProduct = async (req, res) => {
     });
     res.json({ message: "Ürün başarıyla silindi." });
   } catch (error) {
+    console.error("deleteProduct Error:", error);
     res.status(500).json({ error: "Ürün silinemedi." });
   }
 };
@@ -196,7 +188,6 @@ export const updateProduct = async (req, res) => {
     }
 
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
-    
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
 
     const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
@@ -239,7 +230,7 @@ export const updateProduct = async (req, res) => {
 
     res.json(updatedProduct);
   } catch (error) {
-    console.error("Update Error:", error);
+    console.error("updateProduct Error:", error);
     if (req.files) {
         req.files.forEach(file => {
             if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -249,28 +240,47 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-
-// --- YENİ: TOPLU SİLME ---
+// --- YENİ: TOPLU SİLME (GÜÇLENDİRİLMİŞ) ---
 export const deleteProductsBulk = async (req, res) => {
-    const { ids } = req.body; // [1, 5, 8] gibi ID dizisi
+    const { ids } = req.body;
+    
+    // ✅ VALIDATION: Gelen veri dizi mi ve içi dolu mu kontrol et
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "Geçersiz ID listesi" });
+    }
+    
     try {
-        await prisma.product.deleteMany({
+        const result = await prisma.product.deleteMany({
             where: {
                 id: { in: ids.map(id => parseInt(id)) }
             }
         });
-        res.json({ message: "Seçili ürünler silindi." });
+        
+        res.json({ 
+            message: "Seçili ürünler silindi.",
+            deletedCount: result.count
+        });
     } catch (error) {
+        console.error("deleteProductsBulk Error:", error);
         res.status(500).json({ error: "Toplu silme başarısız." });
     }
 };
 
-// --- YENİ: TOPLU KATEGORİ EKLEME ---
+// --- YENİ: TOPLU KATEGORİ EKLEME (GÜÇLENDİRİLMİŞ) ---
 export const addProductsToCategoryBulk = async (req, res) => {
     const { productIds, categoryId } = req.body;
+    
+    // ✅ VALIDATION
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+        return res.status(400).json({ error: "Ürün listesi geçersiz" });
+    }
+    
+    if (!categoryId) {
+        return res.status(400).json({ error: "Kategori ID gerekli" });
+    }
+    
     try {
-        // Prisma'da updateMany ile relation güncellemek zor olduğu için transaction kullanıyoruz
-        await prisma.$transaction(
+        const results = await prisma.$transaction(
             productIds.map(id => 
                 prisma.product.update({
                     where: { id: parseInt(id) },
@@ -282,9 +292,13 @@ export const addProductsToCategoryBulk = async (req, res) => {
                 })
             )
         );
-        res.json({ message: "Ürünler kategoriye eklendi." });
+        
+        res.json({ 
+            message: "Ürünler kategoriye eklendi.",
+            updatedCount: results.length
+        });
     } catch (error) {
-        console.log(error);
+        console.error("addProductsToCategoryBulk Error:", error);
         res.status(500).json({ error: "Kategori güncellemesi başarısız." });
     }
 };
@@ -294,6 +308,11 @@ export const updateProductStatus = async (req, res) => {
     const { id } = req.params;
     const { isActive } = req.body;
     
+    // ✅ VALIDATION
+    if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ error: "isActive boolean olmalı" });
+    }
+    
     try {
         const product = await prisma.product.update({
             where: { id: parseInt(id) },
@@ -301,6 +320,7 @@ export const updateProductStatus = async (req, res) => {
         });
         res.json(product);
     } catch (error) {
+        console.error("updateProductStatus Error:", error);
         res.status(500).json({ error: "Durum güncellenemedi." });
     }
 };
