@@ -42,7 +42,8 @@ app.use(cors({
   origin: [
     "http://localhost:5173",              
     "https://bigboss-frontend.vercel.app", 
-    "http://localhost:5000"
+    "http://localhost:5000",
+    "https://bigbosstextil.com"
   ],
   credentials: true
 }));
