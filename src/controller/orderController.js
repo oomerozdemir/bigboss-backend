@@ -1,6 +1,14 @@
 import { PrismaClient } from '@prisma/client';
+import {
+  sendOrderConfirmationEmail,
+  sendOrderShippedEmail,
+  sendOrderDeliveredEmail,
+  sendOrderCancelledEmail
+} from '../services/emailService.js';
+
 const prisma = new PrismaClient();
 
+// --- SİPARİŞ OLUŞTUR  ---
 export const createOrder = async (req, res) => {
   const userId = req.user.id;
   const { items, total, address, couponCode, discountAmount, paymentMethod } = req.body; 
@@ -25,7 +33,6 @@ export const createOrder = async (req, res) => {
             throw new Error(`Yetersiz stok: ${item.variant}`);
         }
 
-        // Stoğu düşür
         await prisma.productVariant.update({
             where: { id: productVariant.id },
             data: { stock: productVariant.stock - item.quantity }
@@ -44,15 +51,10 @@ export const createOrder = async (req, res) => {
           total,
           addressSnapshot: address,
           status: "SIPARIS_ALINDI",
-          
-          // Kupon bilgileri
           couponCode: couponCode || null,
           discountAmount: discountAmount || 0,
-
-          // ✅ YENİ: PayTR için eklenen alanlar
-          paymentStatus: 'PENDING', // Ödeme bekliyor
-          paymentMethod: paymentMethod || 'PAYTR', // Ödeme yöntemi
-
+          paymentStatus: 'PENDING',
+          paymentMethod: paymentMethod || 'PAYTR',
           items: {
             create: items.map(item => ({
               productId: item.productId,
@@ -65,14 +67,19 @@ export const createOrder = async (req, res) => {
         include: {
           items: {
             include: { product: true }
-          }
+          },
+          user: true
         }
       });
 
       return newOrder;
     });
     
-    // ✅ Sipariş başarıyla oluşturuldu
+    // ✅ E-POSTA GÖNDER (Async - bloke etmeden)
+    sendOrderConfirmationEmail(result, result.user)
+      .then(() => console.log(`📧 Sipariş onay e-postası kuyruğa alındı: #${result.id}`))
+      .catch(err => console.error('E-posta gönderimi hatası:', err));
+
     res.status(201).json(result);
 
   } catch (error) {
@@ -92,7 +99,7 @@ export const getMyOrders = async (req, res) => {
           include: { product: true } 
         },
         returnRequest: true,
-        payments: true 
+        payments: true
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -112,7 +119,7 @@ export const getAllOrders = async (req, res) => {
         items: {
           include: { product: true }
         },
-        payments: true // 
+        payments: true
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -123,16 +130,56 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// --- SİPARİŞ DURUMUNU GÜNCELLE (ADMİN) ---
+// --- SİPARİŞ DURUMUNU GÜNCELLE (E-posta ile) ---
 export const updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, trackingNumber } = req.body; // trackingNumber opsiyonel
 
+    // Siparişi ve kullanıcıyı getir
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        user: true,
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Sipariş bulunamadı" });
+    }
+
+    // Sipariş durumunu güncelle
     const updatedOrder = await prisma.order.update({
       where: { id: parseInt(id) },
       data: { status }
     });
+
+    // ✅ DURUMA GÖRE E-POSTA GÖNDER
+    switch (status) {
+      case 'KARGOLANDI':
+        sendOrderShippedEmail(order, order.user, trackingNumber)
+          .then(() => console.log(`📧 Kargo e-postası gönderildi: #${order.id}`))
+          .catch(err => console.error('Kargo e-postası hatası:', err));
+        break;
+
+      case 'TESLIM_EDILDI':
+        sendOrderDeliveredEmail(order, order.user)
+          .then(() => console.log(`📧 Teslimat e-postası gönderildi: #${order.id}`))
+          .catch(err => console.error('Teslimat e-postası hatası:', err));
+        break;
+
+      case 'IPTAL_EDILDI':
+        sendOrderCancelledEmail(order, order.user, 'Admin tarafından iptal edildi')
+          .then(() => console.log(`📧 İptal e-postası gönderildi: #${order.id}`))
+          .catch(err => console.error('İptal e-postası hatası:', err));
+        break;
+
+      default:
+        break;
+    }
 
     res.json(updatedOrder);
   } catch (error) {
@@ -141,6 +188,7 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
+// --- ÖDEME DURUMUNU GÜNCELLE ---
 export const updatePaymentStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
