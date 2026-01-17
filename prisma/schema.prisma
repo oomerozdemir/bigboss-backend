@@ -81,6 +81,7 @@ model User {
   favorites Favorite[]
   addresses Address[]
   orders    Order[]
+  payments  Payment[]
 }
 
 model Favorite {
@@ -140,8 +141,12 @@ model Order {
   couponCode      String?     
   discountAmount  Decimal     @db.Decimal(10, 2) @default(0)
 
+  paymentStatus   PaymentStatus? @default(PENDING) 
+  paymentMethod   String?        @default("PAYTR") 
+
   returnRequest   ReturnRequest?
   items           OrderItem[]
+  payments        Payment[]
   createdAt       DateTime    @default(now())
 }
 
@@ -186,4 +191,42 @@ model Coupon {
   usageLimit     Int?         // Kaç kere kullanılabilir (Opsiyonel)
   
   createdAt      DateTime     @default(now())
+}
+
+enum PaymentStatus {
+  PENDING      // Ödeme bekleniyor
+  SUCCESS      // Başarılı
+  FAILED       // Başarısız
+  CANCELLED    // İptal edildi
+  REFUNDED     // İade edildi
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  orderId       Int           @unique // Sipariş ID (merchant_oid)
+  userId        Int?          // Kullanıcı ID
+  
+  // Ödeme Bilgileri
+  amount        Decimal       @db.Decimal(10, 2) // Toplam tutar
+  currency      String        @default("TL")
+  status        PaymentStatus @default(PENDING)
+  paymentMethod String        @default("PAYTR")
+  
+  // PayTR Özel Alanlar
+  paytrToken    String?       // PayTR Token
+  totalAmount   Decimal?      @db.Decimal(10, 2) // PayTR'den gelen toplam tutar
+  failureReason String?       // Başarısız ödeme nedeni
+  
+  // Tarihler
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  paidAt        DateTime?     // Ödeme yapıldı tarihi
+  
+  // İlişkiler
+  user          User?         @relation(fields: [userId], references: [id])
+  order         Order         @relation(fields: [orderId], references: [id])
+  
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
 }

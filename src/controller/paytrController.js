@@ -1,0 +1,317 @@
+// src/controller/paytrController.js - MEVCUT YAPIYA UYARLANMIŞ
+import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
+import fetch from 'node-fetch';
+
+const prisma = new PrismaClient();
+
+// ✅ PayTR Konfigürasyonu
+const PAYTR_CONFIG = {
+  merchant_id: process.env.PAYTR_MERCHANT_ID,
+  merchant_key: process.env.PAYTR_MERCHANT_KEY,
+  merchant_salt: process.env.PAYTR_MERCHANT_SALT,
+  test_mode: process.env.PAYTR_TEST_MODE === 'true' ? '1' : '0',
+  iframe_url: 'https://www.paytr.com/odeme/guvenli/',
+};
+
+// ✅ PayTR Token Oluşturma
+export const createPaymentToken = async (req, res) => {
+  try {
+    const { 
+      user_basket, 
+      user_name, 
+      user_address, 
+      user_phone, 
+      user_email,
+      merchant_oid, // Sipariş ID (Order.id)
+      payment_amount, 
+      user_ip 
+    } = req.body;
+
+    // Validasyon
+    if (!user_basket || !user_name || !user_address || !user_phone || !user_email || !merchant_oid || !payment_amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Eksik ödeme bilgisi' 
+      });
+    }
+
+    // ✅ Siparişin varlığını kontrol et
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(merchant_oid) }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sipariş bulunamadı'
+      });
+    }
+
+    // PayTR için gerekli parametreler
+    const merchant_id = PAYTR_CONFIG.merchant_id;
+    const merchant_key = PAYTR_CONFIG.merchant_key;
+    const merchant_salt = PAYTR_CONFIG.merchant_salt;
+    
+    // Callback URL'leri
+    const merchant_ok_url = `${process.env.FRONTEND_URL}/payment-success`;
+    const merchant_fail_url = `${process.env.FRONTEND_URL}/payment-failed`;
+    
+    const test_mode = PAYTR_CONFIG.test_mode;
+    const max_installment = '0'; // Tek çekim
+    const currency = 'TL';
+    const timeout_limit = '30';
+    const debug_on = '1';
+    const lang = 'tr';
+    const payment_type = 'card';
+    
+    const user_ip_address = user_ip || req.ip || req.connection.remoteAddress;
+
+    // ✅ PayTR Hash Oluşturma (SIRALAMA ÖNEMLİ!)
+    const hashSTR = 
+      merchant_id + 
+      user_ip_address + 
+      merchant_oid + 
+      user_email + 
+      payment_amount + 
+      user_basket + 
+      max_installment + 
+      currency + 
+      test_mode;
+    
+    const paytr_token = hashSTR + merchant_salt;
+    const token = crypto.createHmac('sha256', merchant_key).update(paytr_token).digest('base64');
+
+    // ✅ PayTR'ye Gönderilecek Data
+    const paytr_data = {
+      merchant_id,
+      user_ip: user_ip_address,
+      merchant_oid,
+      email: user_email,
+      payment_amount,
+      paytr_token: token,
+      user_basket,
+      debug_on,
+      test_mode,
+      no_installment: max_installment,
+      max_installment,
+      user_name,
+      user_address,
+      user_phone,
+      merchant_ok_url,
+      merchant_fail_url,
+      timeout_limit,
+      currency,
+      lang,
+      payment_type
+    };
+
+    // ✅ PayTR API'ye İstek Gönder
+    const formData = new URLSearchParams(paytr_data);
+
+    const response = await fetch('https://www.paytr.com/odeme/api/get-token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formData
+    });
+
+    const result = await response.json();
+
+    // ✅ PayTR Yanıtı Kontrolü
+    if (result.status === 'success') {
+      // ✅ Payment kaydı oluştur
+      await prisma.payment.create({
+        data: {
+          orderId: parseInt(merchant_oid),
+          userId: req.user?.id || order.userId,
+          amount: parseFloat(payment_amount) / 100, // Kuruştan TL'ye çevir
+          status: 'PENDING',
+          paytrToken: result.token,
+          paymentMethod: 'PAYTR',
+        }
+      });
+
+      // ✅ Order'ın payment durumunu güncelle
+      await prisma.order.update({
+        where: { id: parseInt(merchant_oid) },
+        data: { 
+          paymentStatus: 'PENDING',
+          paymentMethod: 'PAYTR'
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        token: result.token,
+        iframe_url: PAYTR_CONFIG.iframe_url + result.token
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: result.reason || 'PayTR token oluşturulamadı'
+      });
+    }
+
+  } catch (error) {
+    console.error('PayTR Token Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Ödeme işlemi başlatılamadı',
+      error: error.message
+    });
+  }
+};
+
+// ✅ PayTR Callback (IPN - Instant Payment Notification)
+export const paytrCallback = async (req, res) => {
+  try {
+    const { 
+      merchant_oid, 
+      status, 
+      total_amount, 
+      hash,
+      failed_reason_code,
+      failed_reason_msg
+    } = req.body;
+
+    console.log('📞 PayTR Callback alındı:', { merchant_oid, status });
+
+    // ✅ Hash Doğrulama (GÜVENLİK KONTROLÜ - ÇOK ÖNEMLİ!)
+    const merchant_key = PAYTR_CONFIG.merchant_key;
+    const merchant_salt = PAYTR_CONFIG.merchant_salt;
+    
+    const hashSTR = merchant_oid + merchant_salt + status + total_amount;
+    const calculated_hash = crypto.createHmac('sha256', merchant_key).update(hashSTR).digest('base64');
+
+    if (hash !== calculated_hash) {
+      console.error('❌ PayTR Callback Hash Mismatch!');
+      return res.status(400).send('PAYTR notification failed: bad hash');
+    }
+
+    // ✅ Payment kaydını bul
+    const payment = await prisma.payment.findFirst({
+      where: { orderId: parseInt(merchant_oid) },
+      orderBy: { createdAt: 'desc' } // En son ödeme denemesini al
+    });
+
+    if (!payment) {
+      console.error('❌ Payment kaydı bulunamadı:', merchant_oid);
+      return res.status(404).send('PAYTR notification failed: payment not found');
+    }
+
+    if (status === 'success') {
+      // ✅ Ödeme başarılı
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { 
+          status: 'SUCCESS',
+          paidAt: new Date(),
+          totalAmount: parseFloat(total_amount) / 100 // Kuruştan TL'ye
+        }
+      });
+
+      // ✅ Sipariş durumunu güncelle
+      await prisma.order.update({
+        where: { id: parseInt(merchant_oid) },
+        data: { 
+          status: 'SIPARIS_ALINDI', // OrderStatus enum'ınıza göre ayarlayın
+          paymentStatus: 'SUCCESS'
+        }
+      });
+
+      console.log(`✅ Payment SUCCESS: Order ${merchant_oid}`);
+      return res.status(200).send('OK');
+      
+    } else {
+      // ❌ Ödeme başarısız
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { 
+          status: 'FAILED',
+          failureReason: failed_reason_msg || 'Unknown error'
+        }
+      });
+
+      await prisma.order.update({
+        where: { id: parseInt(merchant_oid) },
+        data: { 
+          paymentStatus: 'FAILED'
+          // NOT: status'u IPTAL_EDILDI yapmıyoruz, kullanıcı tekrar deneyebilsin
+        }
+      });
+
+      console.log(`❌ Payment FAILED: Order ${merchant_oid} - Reason: ${failed_reason_msg}`);
+      return res.status(200).send('OK');
+    }
+
+  } catch (error) {
+    console.error('❌ PayTR Callback Error:', error);
+    return res.status(500).send('PAYTR notification failed: server error');
+  }
+};
+
+// ✅ Ödeme Durumu Sorgulama
+export const checkPaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const payment = await prisma.payment.findFirst({
+      where: { orderId: parseInt(orderId) },
+      orderBy: { createdAt: 'desc' }, // En son ödeme denemesi
+      include: {
+        order: true
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ödeme bulunamadı'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      payment: {
+        orderId: payment.orderId,
+        status: payment.status,
+        amount: payment.amount,
+        paidAt: payment.paidAt,
+        failureReason: payment.failureReason
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment Status Check Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Ödeme durumu sorgulanamadı',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Test Ödeme (Sadece development için)
+export const testPayment = async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ message: 'Test ödeme sadece development modda kullanılabilir' });
+  }
+
+  const testData = {
+    user_basket: Buffer.from(JSON.stringify([
+      ['Test Ürün', '10000', 1] // 100.00 TL (kuruş cinsinden)
+    ])).toString('base64'),
+    user_name: 'Test Kullanıcı',
+    user_address: 'Test Adres, İstanbul',
+    user_phone: '05551234567',
+    user_email: 'test@test.com',
+    merchant_oid: 'TEST-' + Date.now(),
+    payment_amount: '10000', // 100.00 TL (kuruş cinsinden)
+    user_ip: req.ip
+  };
+
+  req.body = testData;
+  return createPaymentToken(req, res);
+};

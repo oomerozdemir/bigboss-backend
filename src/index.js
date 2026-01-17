@@ -15,19 +15,17 @@ import addressRoutes from "./routes/addressRoutes.js"
 import orderRoutes from './routes/orderRoutes.js';
 import returnRoutes from './routes/returnRoutes.js'; 
 import couponRoutes from './routes/couponRoutes.js';
+import paytrRoutes from "./routes/paytrRoutes.js";
 
 dotenv.config(); 
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 1. TRUST PROXY (Render/Cloudflare için ZORUNLU)
 app.set('trust proxy', 1); 
 
-// 2. HELMET (Güvenlik Başlıkları)
 app.use(helmet());
 
-// 3. RATE LIMITING (DDoS Koruması)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 dakika
   max: 100, // IP başına limit
@@ -37,7 +35,6 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// 4. CORS
 app.use(cors({
   origin: [
     "http://localhost:5173",              
@@ -50,7 +47,7 @@ app.use(cors({
 
 app.use(json({ limit: '10kb' })); 
 
-// 5. PARAMETRE KİRLİLİĞİ ÖNLEME
+// PARAMETRE KİRLİLİĞİ ÖNLEME
 app.use(hpp());
 
 // Rotalar
@@ -62,6 +59,7 @@ app.use('/api/address', addressRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/returns', returnRoutes); 
 app.use('/api/coupons', couponRoutes);
+app.use('/api/paytr', paytrRoutes);
 
 app.get('/', (req, res) => {
   res.send('API Çalışıyor!');

@@ -1,21 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
-// --- SİPARİŞ OLUŞTUR (Stok Kontrolü ve Düşümü İle) ---
 export const createOrder = async (req, res) => {
   const userId = req.user.id;
-  const { items, total, address, couponCode, discountAmount } = req.body; 
+  const { items, total, address, couponCode, discountAmount, paymentMethod } = req.body; 
   
-  // Transaction: Ya hepsi olur ya hiçbiri olmaz (Stok düşerken hata olursa siparişi iptal eder)
   try {
     const result = await prisma.$transaction(async (prisma) => {
       
-      // 1. Önce Stok Kontrolü Yap ve Stoktan Düş
+      // 1. Stok Kontrolü ve Düşümü
       for (const item of items) {
         const productVariant = await prisma.productVariant.findFirst({
             where: { 
                 productId: item.productId,
-                size: item.variant.split('/')[0].trim() // "S / Siyah" -> "S" bedenini bul
+                size: item.variant.split('/')[0].trim()
             }
         });
 
@@ -33,7 +31,6 @@ export const createOrder = async (req, res) => {
             data: { stock: productVariant.stock - item.quantity }
         });
         
-        // Ana ürün stoğunu da düşürebilirsiniz (Opsiyonel, eğer toplam stok tutuyorsanız)
         await prisma.product.update({
             where: { id: item.productId },
             data: { stock: { decrement: item.quantity } }
@@ -41,16 +38,20 @@ export const createOrder = async (req, res) => {
       }
 
       // 2. Siparişi Oluştur
- const newOrder = await prisma.order.create({
+      const newOrder = await prisma.order.create({
         data: {
           userId,
           total,
           addressSnapshot: address,
           status: "SIPARIS_ALINDI",
           
-          // YENİ: Kupon bilgilerini kaydediyoruz
+          // Kupon bilgileri
           couponCode: couponCode || null,
           discountAmount: discountAmount || 0,
+
+          // ✅ YENİ: PayTR için eklenen alanlar
+          paymentStatus: 'PENDING', // Ödeme bekliyor
+          paymentMethod: paymentMethod || 'PAYTR', // Ödeme yöntemi
 
           items: {
             create: items.map(item => ({
@@ -60,12 +61,18 @@ export const createOrder = async (req, res) => {
               variant: item.variant
             }))
           }
+        },
+        include: {
+          items: {
+            include: { product: true }
+          }
         }
       });
 
       return newOrder;
     });
     
+    // ✅ Sipariş başarıyla oluşturuldu
     res.status(201).json(result);
 
   } catch (error) {
@@ -83,8 +90,9 @@ export const getMyOrders = async (req, res) => {
       include: { 
         items: {
           include: { product: true } 
-        } ,
-        returnRequest: true
+        },
+        returnRequest: true,
+        payments: true 
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -103,7 +111,8 @@ export const getAllOrders = async (req, res) => {
         user: { select: { name: true, email: true } }, 
         items: {
           include: { product: true }
-        }
+        },
+        payments: true // 
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -114,11 +123,11 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// SİPARİŞ DURUMUNU GÜNCELLE ---
+// --- SİPARİŞ DURUMUNU GÜNCELLE (ADMİN) ---
 export const updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // Örn: "KARGOLANDI"
+    const { status } = req.body;
 
     const updatedOrder = await prisma.order.update({
       where: { id: parseInt(id) },
@@ -129,5 +138,22 @@ export const updateOrderStatus = async (req, res) => {
   } catch (error) {
     console.error("Güncelleme hatası:", error);
     res.status(500).json({ error: "Durum güncellenemedi." });
+  }
+};
+
+export const updatePaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentStatus } = req.body;
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: parseInt(orderId) },
+      data: { paymentStatus }
+    });
+
+    res.json(updatedOrder);
+  } catch (error) {
+    console.error("Ödeme durumu güncelleme hatası:", error);
+    res.status(500).json({ error: "Ödeme durumu güncellenemedi." });
   }
 };
