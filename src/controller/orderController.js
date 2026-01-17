@@ -4,7 +4,7 @@ import {
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
   sendOrderCancelledEmail
-} from '../services/emailService.js';
+} from "../utils/emailService";
 
 const prisma = new PrismaClient();
 
