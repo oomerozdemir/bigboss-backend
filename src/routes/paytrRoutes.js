@@ -1,6 +1,6 @@
 import { Router } from 'express';
 const router = Router();
-import { createPaymentToken, paytrCallback, checkPaymentStatus, testPayment } from '../controllers/paytrController';
+import { createPaymentToken, paytrCallback, checkPaymentStatus, testPayment } from '../controller/paytrController.js';
 import { protect } from '../middleware/authMiddleware'; 
 router.post('/create-payment', protect, createPaymentToken);
 
