@@ -1,3 +1,5 @@
+// src/controller/productController.js - PAGİNATİON DÜZELTİLMİŞ
+
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
@@ -24,13 +26,14 @@ const uploadToCloudinary = async (filePath) => {
   }
 };
 
-// --- TÜM ÜRÜNLERİ GETİR ---
+// --- TÜM ÜRÜNLERİ GETİR---
 export const getAllProducts = async (req, res) => {
   try {
-    const { isAdmin, page = 1, limit = 20, search = "" } = req.query;
+    const { isAdmin, page = 1, limit, search = "" } = req.query;
 
     const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    
+    const limitNum = limit ? parseInt(limit) : 999999; // Veya istediğiniz yüksek bir sayı
     const skip = (pageNum - 1) * limitNum;
 
     const whereClause = {
@@ -62,7 +65,7 @@ export const getAllProducts = async (req, res) => {
         products,
         meta: {
             totalCount,
-            totalPages: Math.ceil(totalCount / limitNum),
+            totalPages: limit ? Math.ceil(totalCount / limitNum) : 1,
             currentPage: pageNum,
             limit: limitNum
         }
@@ -240,11 +243,10 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-// --- YENİ: TOPLU SİLME (GÜÇLENDİRİLMİŞ) ---
+// --- TOPLU SİLME ---
 export const deleteProductsBulk = async (req, res) => {
     const { ids } = req.body;
     
-    // ✅ VALIDATION: Gelen veri dizi mi ve içi dolu mu kontrol et
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "Geçersiz ID listesi" });
     }
@@ -266,11 +268,10 @@ export const deleteProductsBulk = async (req, res) => {
     }
 };
 
-// --- YENİ: TOPLU KATEGORİ EKLEME (GÜÇLENDİRİLMİŞ) ---
+// --- TOPLU KATEGORİ EKLEME ---
 export const addProductsToCategoryBulk = async (req, res) => {
     const { productIds, categoryId } = req.body;
     
-    // ✅ VALIDATION
     if (!Array.isArray(productIds) || productIds.length === 0) {
         return res.status(400).json({ error: "Ürün listesi geçersiz" });
     }
@@ -303,12 +304,11 @@ export const addProductsToCategoryBulk = async (req, res) => {
     }
 };
 
-// --- YENİ: DURUM GÜNCELLEME (GİZLE/GÖSTER) ---
+// --- DURUM GÜNCELLEME (GİZLE/GÖSTER) ---
 export const updateProductStatus = async (req, res) => {
     const { id } = req.params;
     const { isActive } = req.body;
     
-    // ✅ VALIDATION
     if (typeof isActive !== 'boolean') {
         return res.status(400).json({ error: "isActive boolean olmalı" });
     }

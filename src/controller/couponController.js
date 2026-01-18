@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 // 1. ADMIN: Yeni Kupon Oluştur
 export const createCoupon = async (req, res) => {
   try {
-    const { code, discountType, discountValue, expirationDate, minOrderAmount } = req.body;
+    const { code, discountType, discountValue, expirationDate, minOrderAmount, usageLimit } = req.body;
 
     const existing = await prisma.coupon.findUnique({ where: { code } });
     if (existing) return res.status(400).json({ error: "Bu kupon kodu zaten var." });
@@ -15,7 +15,9 @@ export const createCoupon = async (req, res) => {
         discountType,
         discountValue,
         minOrderAmount: minOrderAmount || 0,
-        expirationDate: expirationDate ? new Date(expirationDate) : null
+        expirationDate: expirationDate ? new Date(expirationDate) : null,
+        usageLimit: usageLimit ? parseInt(usageLimit) : null,
+        usedCount: 0 
       }
     });
 
@@ -29,7 +31,14 @@ export const createCoupon = async (req, res) => {
 // 2. ADMIN: Tüm Kuponları Getir
 export const getAllCoupons = async (req, res) => {
   try {
-    const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } });
+    const coupons = await prisma.coupon.findMany({ 
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { orders: true } 
+        }
+      }
+    });
     res.json(coupons);
   } catch (error) {
     res.status(500).json({ error: "Kuponlar getirilemedi." });
@@ -46,31 +55,74 @@ export const deleteCoupon = async (req, res) => {
   }
 };
 
-// 4. USER: Kupon Doğrula ve Uygula
+// 4. USER: Kupon Doğrula ve Uygula (KULLANIM LİMİTİ KONTROLÜ İLE)
 export const validateCoupon = async (req, res) => {
   const { code, cartTotal } = req.body;
 
   try {
-    const coupon = await prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
+    const coupon = await prisma.coupon.findUnique({ 
+      where: { code: code.toUpperCase() }
+    });
 
-    // Kontroller
-    if (!coupon) return res.status(404).json({ error: "Geçersiz kupon kodu." });
-    if (!coupon.isActive) return res.status(400).json({ error: "Bu kupon pasif durumda." });
+    if (!coupon) {
+      return res.status(404).json({ error: "Geçersiz kupon kodu." });
+    }
+
+    if (!coupon.isActive) {
+      return res.status(400).json({ error: "Bu kupon pasif durumda." });
+    }
     
-    // Tarih Kontrolü
     if (coupon.expirationDate && new Date() > new Date(coupon.expirationDate)) {
-        return res.status(400).json({ error: "Kuponun süresi dolmuş." });
+      return res.status(400).json({ error: "Kuponun süresi dolmuş." });
     }
 
-    // Sepet Alt Limiti Kontrolü
     if (coupon.minOrderAmount && parseFloat(cartTotal) < parseFloat(coupon.minOrderAmount)) {
-        return res.status(400).json({ error: `Bu kuponu kullanmak için sepet tutarı en az ${coupon.minOrderAmount} TL olmalı.` });
+      return res.status(400).json({ 
+        error: `Bu kuponu kullanmak için sepet tutarı en az ${coupon.minOrderAmount} TL olmalı.` 
+      });
     }
 
-    res.json(coupon);
+    if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
+      return res.status(400).json({ 
+        error: "Bu kuponun kullanım hakkı tükenmiştir." 
+      });
+    }
+
+    res.json({
+      ...coupon,
+      remainingUses: coupon.usageLimit ? coupon.usageLimit - coupon.usedCount : null // Kalan kullanım hakkı
+    });
 
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Kupon doğrulanamadı." });
+  }
+};
+
+// ✅ 5.Kupon Güncelle (ADMIN)
+export const updateCoupon = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { code, discountType, discountValue, expirationDate, minOrderAmount, usageLimit, isActive } = req.body;
+
+    const dataToUpdate = {};
+
+    if (code) dataToUpdate.code = code.toUpperCase();
+    if (discountType) dataToUpdate.discountType = discountType;
+    if (discountValue !== undefined) dataToUpdate.discountValue = discountValue;
+    if (expirationDate !== undefined) dataToUpdate.expirationDate = expirationDate ? new Date(expirationDate) : null;
+    if (minOrderAmount !== undefined) dataToUpdate.minOrderAmount = minOrderAmount;
+    if (usageLimit !== undefined) dataToUpdate.usageLimit = usageLimit ? parseInt(usageLimit) : null;
+    if (isActive !== undefined) dataToUpdate.isActive = isActive;
+
+    const updatedCoupon = await prisma.coupon.update({
+      where: { id: parseInt(id) },
+      data: dataToUpdate
+    });
+
+    res.json(updatedCoupon);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Kupon güncellenemedi." });
   }
 };

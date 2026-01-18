@@ -1,22 +1,36 @@
+// src/controller/orderController.js - FATURA BİLGİLERİ + KUPON TRACKING
+
 import { PrismaClient } from '@prisma/client';
 import {
   sendOrderConfirmationEmail,
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
   sendOrderCancelledEmail
-} from "../utils/emailService.js";
+} from '../services/emailService.js';
 
 const prisma = new PrismaClient();
 
-// --- SİPARİŞ OLUŞTUR  ---
+// --- SİPARİŞ OLUŞTUR (Fatura Bilgileri + Kupon Tracking) ---
 export const createOrder = async (req, res) => {
   const userId = req.user.id;
-  const { items, total, address, couponCode, discountAmount, paymentMethod } = req.body; 
+  const { 
+    items, 
+    total, 
+    address, 
+    couponCode, 
+    discountAmount, 
+    paymentMethod,
+    invoiceType,  
+    tcNo,         
+    companyName, 
+    taxOffice,   
+    taxNumber,    
+    invoiceAddress 
+  } = req.body; 
   
   try {
     const result = await prisma.$transaction(async (prisma) => {
       
-      // 1. Stok Kontrolü ve Düşümü
       for (const item of items) {
         const productVariant = await prisma.productVariant.findFirst({
             where: { 
@@ -44,17 +58,44 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // 2. Siparişi Oluştur
+      let couponId = null;
+      if (couponCode) {
+        const coupon = await prisma.coupon.findUnique({
+          where: { code: couponCode.toUpperCase() }
+        });
+
+        if (coupon) {
+          await prisma.coupon.update({
+            where: { id: coupon.id },
+            data: { usedCount: { increment: 1 } }
+          });
+          couponId = coupon.id;
+        }
+      }
+
       const newOrder = await prisma.order.create({
         data: {
           userId,
           total,
           addressSnapshot: address,
           status: "SIPARIS_ALINDI",
+          
+          // Kupon bilgileri
           couponCode: couponCode || null,
+          couponId: couponId,
           discountAmount: discountAmount || 0,
+          
+          // Ödeme bilgileri
           paymentStatus: 'PENDING',
           paymentMethod: paymentMethod || 'PAYTR',
+
+          invoiceType: invoiceType || 'INDIVIDUAL',
+          tcNo: invoiceType === 'INDIVIDUAL' ? tcNo : null,
+          companyName: invoiceType === 'CORPORATE' ? companyName : null,
+          taxOffice: invoiceType === 'CORPORATE' ? taxOffice : null,
+          taxNumber: invoiceType === 'CORPORATE' ? taxNumber : null,
+          invoiceAddress: invoiceAddress || null,
+
           items: {
             create: items.map(item => ({
               productId: item.productId,
@@ -75,10 +116,10 @@ export const createOrder = async (req, res) => {
       return newOrder;
     });
     
-    // ✅ E-POSTA GÖNDER (Async - bloke etmeden)
+    // E-posta gönder
     sendOrderConfirmationEmail(result, result.user)
-      .then(() => console.log(`📧 Sipariş onay e-postası kuyruğa alındı: #${result.id}`))
-      .catch(err => console.error('E-posta gönderimi hatası:', err));
+      .then(() => console.log(`📧 Sipariş onay e-postası gönderildi: #${result.id}`))
+      .catch(err => console.error('E-posta hatası:', err));
 
     res.status(201).json(result);
 
@@ -130,13 +171,11 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// --- SİPARİŞ DURUMUNU GÜNCELLE (E-posta ile) ---
+// --- SİPARİŞ DURUMUNU GÜNCELLE (Kargo Numarası İle) ---
 export const updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, trackingNumber } = req.body; // trackingNumber opsiyonel
-
-    // Siparişi ve kullanıcıyı getir
+    const { status, trackingNumber, cargoCompany } = req.body; 
     const order = await prisma.order.findUnique({
       where: { id: parseInt(id) },
       include: {
@@ -151,13 +190,19 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ error: "Sipariş bulunamadı" });
     }
 
-    // Sipariş durumunu güncelle
+    const dataToUpdate = { status };
+    
+    if (status === 'KARGOLANDI') {
+      if (trackingNumber) dataToUpdate.trackingNumber = trackingNumber;
+      if (cargoCompany) dataToUpdate.cargoCompany = cargoCompany;
+    }
+
     const updatedOrder = await prisma.order.update({
       where: { id: parseInt(id) },
-      data: { status }
+      data: dataToUpdate
     });
 
-    // ✅ DURUMA GÖRE E-POSTA GÖNDER
+    // E-posta gönder
     switch (status) {
       case 'KARGOLANDI':
         sendOrderShippedEmail(order, order.user, trackingNumber)
@@ -203,5 +248,49 @@ export const updatePaymentStatus = async (req, res) => {
   } catch (error) {
     console.error("Ödeme durumu güncelleme hatası:", error);
     res.status(500).json({ error: "Ödeme durumu güncellenemedi." });
+  }
+};
+
+export const getInvoiceDetails = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.isAdmin;
+
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(orderId) },
+      select: {
+        id: true,
+        invoiceType: true,
+        tcNo: true,
+        companyName: true,
+        taxOffice: true,
+        taxNumber: true,
+        invoiceAddress: true,
+        total: true,
+        discountAmount: true,
+        createdAt: true,
+        user: {
+          select: {
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Sipariş bulunamadı" });
+    }
+
+    // Kullanıcı sadece kendi siparişlerini görebilir
+    if (!isAdmin && order.userId !== userId) {
+      return res.status(403).json({ error: "Bu siparişi görme yetkiniz yok" });
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error("Fatura bilgileri hatası:", error);
+    res.status(500).json({ error: "Fatura bilgileri getirilemedi" });
   }
 };

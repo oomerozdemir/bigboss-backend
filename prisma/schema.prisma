@@ -130,25 +130,45 @@ enum ReturnStatus {
 
 
 model Order {
-  id              Int         @id @default(autoincrement())
-  user            User        @relation(fields: [userId], references: [id])
+  id              Int            @id @default(autoincrement())
+  user            User           @relation(fields: [userId], references: [id])
   userId          Int
   
-  status          OrderStatus @default(SIPARIS_ALINDI)
-  total           Decimal     @db.Decimal(10, 2)       // Toplam Tutar
-  addressSnapshot String      // Sipariş anındaki adres metni (Adres silinse bile kalsın diye)
+  status          OrderStatus    @default(SIPARIS_ALINDI)
+  total           Decimal        @db.Decimal(10, 2)
+  addressSnapshot String
   
-  couponCode      String?     
-  discountAmount  Decimal     @db.Decimal(10, 2) @default(0)
-
-  paymentStatus   PaymentStatus? @default(PENDING) 
-  paymentMethod   String?        @default("PAYTR") 
-
+  // Kupon bilgileri
+  couponCode      String?
+  couponId        Int?           
+  coupon          Coupon?        @relation("CouponOrders", fields: [couponId], references: [id])
+  discountAmount  Decimal        @db.Decimal(10, 2) @default(0)
+  
+  // Ödeme bilgileri
+  paymentStatus   PaymentStatus? @default(PENDING)
+  paymentMethod   String?        @default("PAYTR")
+  
+  invoiceType     String?        // "INDIVIDUAL" veya "CORPORATE"
+  
+  // Bireysel Fatura (TC Kimlik No)
+  tcNo            String?
+  
+  // Kurumsal Fatura
+  companyName     String?
+  taxOffice       String?
+  taxNumber       String?
+  
+  invoiceAddress  String?
+  
+  trackingNumber  String?        // Kargo takip numarası
+  cargoCompany    String?        // Kargo şirketi (Aras, Yurtiçi, MNG vb.)
+  
   returnRequest   ReturnRequest?
   items           OrderItem[]
   payments        Payment[]
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime       @default(now())
 }
+
 
 model OrderItem {
   id        Int      @id @default(autoincrement())
@@ -182,17 +202,20 @@ enum DiscountType {
 
 model Coupon {
   id             Int          @id @default(autoincrement())
-  code           String       @unique // Kupon Kodu (Örn: YAZ2024)
+  code           String       @unique
   discountType   DiscountType
-  discountValue  Decimal      @db.Decimal(10, 2) // İndirim miktarı
-  minOrderAmount Decimal?     @db.Decimal(10, 2) // Minimum sepet tutarı (Opsiyonel)
-  expirationDate DateTime?    // Son kullanma tarihi
+  discountValue  Decimal      @db.Decimal(10, 2)
+  minOrderAmount Decimal?     @db.Decimal(10, 2)
+  expirationDate DateTime?
   isActive       Boolean      @default(true)
-  usageLimit     Int?         // Kaç kere kullanılabilir (Opsiyonel)
+  
+  usageLimit     Int?         // Toplam kaç kere kullanılabilir (null = sınırsız)
+  usedCount      Int          @default(0) // Şu ana kadar kaç kere kullanıldı
   
   createdAt      DateTime     @default(now())
+  
+  orders         Order[]      @relation("CouponOrders")
 }
-
 enum PaymentStatus {
   PENDING      // Ödeme bekleniyor
   SUCCESS      // Başarılı
