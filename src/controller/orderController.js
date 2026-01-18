@@ -1,4 +1,3 @@
-// src/controller/orderController.js - FATURA BİLGİLERİ + KUPON TRACKING
 
 import { PrismaClient } from '@prisma/client';
 import {
@@ -6,7 +5,7 @@ import {
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
   sendOrderCancelledEmail
-} from '../services/emailService.js';
+} from '../utils/emailService.js';
 
 const prisma = new PrismaClient();
 
