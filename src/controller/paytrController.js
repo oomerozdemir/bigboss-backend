@@ -156,6 +156,7 @@ export const paytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash, failed_reason_msg } = req.body;
 
+    // Hash Doğrulama
     const hashSTR = merchant_oid + PAYTR_CONFIG.merchant_salt + status + total_amount;
     const calculated_hash = crypto.createHmac('sha256', PAYTR_CONFIG.merchant_key).update(hashSTR).digest('base64');
 
@@ -178,20 +179,25 @@ export const paytrCallback = async (req, res) => {
         });
       }
 
-      // 2. Siparişi Güncelle ve Kullanıcı Bilgisini Getir
+      // 2. Siparişi Güncelle
       const updatedOrder = await prisma.order.update({
         where: { id: parseInt(merchant_oid) },
         data: { 
-          status: 'SIPARIS_ALINDI',  // Ödeme başarılı olunca "Sipariş Alındı"ya çekiyoruz
-          paymentStatus: 'SUCCESS'
+          status: 'SIPARIS_ALINDI', 
+          paymentStatus: 'SUCCESS' 
         },
-        include: { user: true } // ✅ Mail için kullanıcı bilgisini getiriyoruz
+        include: { user: true }
       });
 
-      // 3. ✅ MAİLİ ŞİMDİ GÖNDERİYORUZ
-      console.log(`💰 Ödeme Başarılı! Mail gönderiliyor: ${updatedOrder.user?.email}`);
-      if (updatedOrder.user && updatedOrder.user.email) {
-          await sendOrderEmail(updatedOrder.user.email, updatedOrder, 'CREATED');
+      // 3. 🛡️ GÜVENLİ MAİL GÖNDERİMİ (Try-Catch Eklendi)
+      try {
+          console.log(`💰 Ödeme Başarılı! Mail gönderiliyor: ${updatedOrder.user?.email}`);
+          if (updatedOrder.user && updatedOrder.user.email) {
+              await sendOrderEmail(updatedOrder.user.email, updatedOrder, 'CREATED');
+          }
+      } catch (mailError) {
+          console.error("⚠️ Mail gönderilemedi ama ödeme alındı:", mailError.message);
+          // Hata olsa bile kod devam edecek ve PayTR'ye OK dönecek
       }
 
       return res.status(200).send('OK');
@@ -214,7 +220,8 @@ export const paytrCallback = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Callback Error:', error);
+    // 500 hatasının sebebi buraya düşmesiydi. Artık mail hatası buraya düşürmeyecek.
+    console.error('Callback Critical Error:', error);
     return res.status(500).send('Error');
   }
 };
