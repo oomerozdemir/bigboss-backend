@@ -45,6 +45,7 @@ app.use(cors({
   credentials: true
 }));
 
+app.use(express.urlencoded({ extended: true }));
 app.use(json({ limit: '10kb' })); 
 
 // PARAMETRE KİRLİLİĞİ ÖNLEME
