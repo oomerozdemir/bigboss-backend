@@ -1,4 +1,3 @@
-// src/controller/paytrController.js - MEVCUT YAPIYA UYARLANMIŞ
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import fetch from 'node-fetch';

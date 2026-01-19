@@ -15,12 +15,21 @@ import addressRoutes from "./routes/addressRoutes.js"
 import orderRoutes from './routes/orderRoutes.js';
 import returnRoutes from './routes/returnRoutes.js'; 
 import couponRoutes from './routes/couponRoutes.js';
-import paytrRoutes from "./routes/paytrRoutes.js";
+
+
 
 dotenv.config(); 
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+app.use(express.urlencoded({ extended: true }));
+app.use(json({ limit: '10kb' })); 
+
+
+import paytrRoutes from "./routes/paytrRoutes.js";
+app.use('/api/paytr', paytrRoutes);
+
 
 app.set('trust proxy', 1); 
 
@@ -45,8 +54,6 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.urlencoded({ extended: true }));
-app.use(json({ limit: '10kb' })); 
 
 // PARAMETRE KİRLİLİĞİ ÖNLEME
 app.use(hpp());
@@ -60,7 +67,6 @@ app.use('/api/address', addressRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/returns', returnRoutes); 
 app.use('/api/coupons', couponRoutes);
-app.use('/api/paytr', paytrRoutes);
 
 app.get('/', (req, res) => {
   res.send('API Çalışıyor!');
