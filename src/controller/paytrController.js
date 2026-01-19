@@ -2,7 +2,7 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
-import { sendOrderConfirmationEmail } from '../utils/emailService';
+import { sendOrderConfirmationEmail } from '../utils/emailService.js';
 
 const prisma = new PrismaClient();
 
