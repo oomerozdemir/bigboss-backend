@@ -9,7 +9,8 @@ router.post('/', protectAdmin, couponController.createCoupon);
 router.get('/', protectAdmin, couponController.getAllCoupons);
 router.delete('/:id', protectAdmin, couponController.deleteCoupon);
 
-// Kullanıcı İşlemi (Sepette Kontrol)
-router.post('/validate', couponController.validateCoupon); // Giriş zorunluluğu yoksa protect kaldırılabilir
+router.put('/:id', protectAdmin, couponController.updateCoupon); 
+
+router.post('/validate', couponController.validateCoupon);
 
 export default router;
