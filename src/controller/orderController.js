@@ -9,13 +9,15 @@ import {
 
 const prisma = new PrismaClient();
 
-// --- SİPARİŞ OLUŞTUR (Fatura Bilgileri + Kupon Tracking) ---
 export const createOrder = async (req, res) => {
-  const { items, total, address, paymentMethod, couponCode, discountAmount, invoiceType, tcNo, companyName, taxOffice, taxNumber, invoiceAddress, paymentId, status } = req.body;
+  const { items, total, 
+    address, paymentMethod, 
+    couponCode, discountAmount, invoiceType, tcNo, companyName, taxOffice, taxNumber,
+     invoiceAddress, paymentId, status } = req.body;
   const userId = req.user.id;
 
   try {
-    // 1. Stok Kontrolü (Aynı kalıyor)
+    // 1. Stok Kontrolü
     for (const item of items) {
       const product = await prisma.product.findUnique({ where: { id: item.productId } });
       if (!product || product.stock < item.quantity) {
@@ -38,13 +40,13 @@ export const createOrder = async (req, res) => {
       const order = await prisma.order.create({
         data: {
           userId,
-          totalPrice: parseFloat(total),
+          total: parseFloat(total), // ✅ DÜZELTİLDİ: 'totalPrice' yerine 'total' yazıldı (Schema ile eşleşti)
           address,
           paymentMethod,
           couponCode,
           discountAmount: parseFloat(discountAmount || 0),
-          paymentStatus: 'PENDING', // Ödeme henüz alınmadı
-          status: status || 'SIPARIS_ALINDI', // Varsayılan durum
+          paymentStatus: 'PENDING',
+          status: status || 'SIPARIS_ALINDI',
           
           // Fatura Bilgileri
           invoiceType: invoiceType || 'INDIVIDUAL',
@@ -74,7 +76,6 @@ export const createOrder = async (req, res) => {
       return order;
     });
 
-    
     res.status(201).json(result);
 
   } catch (error) {
