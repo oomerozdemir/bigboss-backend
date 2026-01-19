@@ -154,91 +154,70 @@ export const createPaymentToken = async (req, res) => {
 // ✅ PayTR Callback (IPN - Instant Payment Notification)
 export const paytrCallback = async (req, res) => {
   try {
-    const { 
-      merchant_oid, 
-      status, 
-      total_amount, 
-      hash,
-      failed_reason_code,
-      failed_reason_msg
-    } = req.body;
+    const { merchant_oid, status, total_amount, hash, failed_reason_msg } = req.body;
 
-    console.log('📞 PayTR Callback alındı:', { merchant_oid, status });
-
-    // ✅ Hash Doğrulama (GÜVENLİK KONTROLÜ - ÇOK ÖNEMLİ!)
-    const merchant_key = PAYTR_CONFIG.merchant_key;
-    const merchant_salt = PAYTR_CONFIG.merchant_salt;
-    
-    const hashSTR = merchant_oid + merchant_salt + status + total_amount;
-    const calculated_hash = crypto.createHmac('sha256', merchant_key).update(hashSTR).digest('base64');
+    const hashSTR = merchant_oid + PAYTR_CONFIG.merchant_salt + status + total_amount;
+    const calculated_hash = crypto.createHmac('sha256', PAYTR_CONFIG.merchant_key).update(hashSTR).digest('base64');
 
     if (hash !== calculated_hash) {
-      console.error('❌ PayTR Callback Hash Mismatch!');
       return res.status(400).send('PAYTR notification failed: bad hash');
     }
 
-    // ✅ Payment kaydını bul
+    // Payment kaydını bul
     const payment = await prisma.payment.findFirst({
       where: { orderId: parseInt(merchant_oid) },
-      orderBy: { createdAt: 'desc' } // En son ödeme denemesini al
+      orderBy: { createdAt: 'desc' }
     });
 
-    if (!payment) {
-      console.error('❌ Payment kaydı bulunamadı:', merchant_oid);
-      return res.status(404).send('PAYTR notification failed: payment not found');
-    }
-
     if (status === 'success') {
-      // ✅ Ödeme başarılı
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: { 
-          status: 'SUCCESS',
-          paidAt: new Date(),
-          totalAmount: parseFloat(total_amount) / 100 // Kuruştan TL'ye
-        }
-      });
+      // 1. Ödemeyi Güncelle
+      if (payment) {
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: 'SUCCESS', paidAt: new Date(), totalAmount: parseFloat(total_amount) / 100 }
+        });
+      }
 
-      // ✅ Sipariş durumunu güncelle
-      await prisma.order.update({
+      // 2. Siparişi Güncelle ve Kullanıcı Bilgisini Getir
+      const updatedOrder = await prisma.order.update({
         where: { id: parseInt(merchant_oid) },
         data: { 
-          status: 'SIPARIS_ALINDI', // OrderStatus enum'ınıza göre ayarlayın
+          status: 'SIPARIS_ALINDI',  // Ödeme başarılı olunca "Sipariş Alındı"ya çekiyoruz
           paymentStatus: 'SUCCESS'
-        }
+        },
+        include: { user: true } // ✅ Mail için kullanıcı bilgisini getiriyoruz
       });
 
-      console.log(`✅ Payment SUCCESS: Order ${merchant_oid}`);
+      // 3. ✅ MAİLİ ŞİMDİ GÖNDERİYORUZ
+      console.log(`💰 Ödeme Başarılı! Mail gönderiliyor: ${updatedOrder.user?.email}`);
+      if (updatedOrder.user && updatedOrder.user.email) {
+          await sendOrderEmail(updatedOrder.user.email, updatedOrder, 'CREATED');
+      }
+
       return res.status(200).send('OK');
       
     } else {
-      // ❌ Ödeme başarısız
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: { 
-          status: 'FAILED',
-          failureReason: failed_reason_msg || 'Unknown error'
-        }
-      });
-
+      // Başarısız Durum
+      if (payment) {
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: 'FAILED', failureReason: failed_reason_msg || 'Hata' }
+        });
+      }
+      
       await prisma.order.update({
         where: { id: parseInt(merchant_oid) },
-        data: { 
-          paymentStatus: 'FAILED'
-          // NOT: status'u IPTAL_EDILDI yapmıyoruz, kullanıcı tekrar deneyebilsin
-        }
+        data: { paymentStatus: 'FAILED' }
       });
 
-      console.log(`❌ Payment FAILED: Order ${merchant_oid} - Reason: ${failed_reason_msg}`);
       return res.status(200).send('OK');
     }
 
   } catch (error) {
-    console.error('❌ PayTR Callback Error:', error);
-    return res.status(500).send('PAYTR notification failed: server error');
+    console.error('Callback Error:', error);
+    return res.status(500).send('Error');
   }
 };
-
 // ✅ Ödeme Durumu Sorgulama
 export const checkPaymentStatus = async (req, res) => {
   try {
