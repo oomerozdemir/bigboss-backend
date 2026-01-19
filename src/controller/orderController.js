@@ -10,26 +10,55 @@ import {
 const prisma = new PrismaClient();
 
 export const createOrder = async (req, res) => {
+  // Kullanıcı giriş yapmışsa ID'yi al
   const userId = req.user ? req.user.id : null;
-  const { items, total, address, couponCode, discountAmount, paymentMethod, invoiceType, tcNo, companyName, taxOffice, taxNumber, invoiceAddress } = req.body;
-
+  
+  const { 
+    items, 
+    total, 
+    address, 
+    couponCode, 
+    discountAmount, 
+    paymentMethod,
+    invoiceType,  
+    tcNo,         
+    companyName, 
+    taxOffice,   
+    taxNumber,    
+    invoiceAddress 
+  } = req.body; 
+  
   try {
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. Stok Kontrolü ve Düşümü (Aynı kalıyor)
+      
+      // 1. Stok Kontrolü ve Güncelleme
       for (const item of items) {
-        let variantSize = item.variant && item.variant.includes('/') ? item.variant.split('/')[0].trim() : item.variant;
-        
-        if (variantSize) {
-            const productVariant = await prisma.productVariant.findFirst({ where: { productId: item.productId, size: variantSize } });
-            if (productVariant) {
-                if (productVariant.stock < item.quantity) throw new Error(`Stok yetersiz: ${item.variant}`);
-                await prisma.productVariant.update({ where: { id: productVariant.id }, data: { stock: { decrement: item.quantity } } });
-            }
+        let variantSize = item.variant; 
+        if (item.variant && item.variant.includes('/')) {
+            variantSize = item.variant.split('/')[0].trim();
         }
-        await prisma.product.update({ where: { id: item.productId }, data: { stock: { decrement: item.quantity } } });
+
+        // Varyant kontrolü
+        const productVariant = await prisma.productVariant.findFirst({
+            where: { productId: item.productId, size: variantSize }
+        });
+
+        if (productVariant) {
+            if (productVariant.stock < item.quantity) throw new Error(`Stok yetersiz: ${item.variant}`);
+            await prisma.productVariant.update({
+                where: { id: productVariant.id },
+                data: { stock: { decrement: item.quantity } }
+            });
+        }
+        
+        // Ana ürün stoğunu düş
+        await prisma.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } }
+        });
       }
 
-      // 2. Kupon Kullanımı (Aynı kalıyor)
+      // 2. Kupon İşlemleri
       let couponId = null;
       if (couponCode) {
         const coupon = await prisma.coupon.findUnique({ where: { code: couponCode.toUpperCase() } });
@@ -39,17 +68,17 @@ export const createOrder = async (req, res) => {
         }
       }
 
-      // 3. Sipariş Oluşturma (DURUM: ODEME_BEKLENIYOR)
+      // 3. Siparişi Oluştur
       const newOrder = await prisma.order.create({
         data: {
-          userId,
+          userId: userId,
           total: parseFloat(total),
           addressSnapshot: address,
           status: "ODEME_BEKLENIYOR", 
-          
           couponCode: couponCode || null,
-          couponId,
+          couponId: couponId,
           discountAmount: parseFloat(discountAmount || 0),
+          
           paymentStatus: 'PENDING',
           paymentMethod: paymentMethod || 'PAYTR',
 
@@ -69,17 +98,26 @@ export const createOrder = async (req, res) => {
             }))
           }
         },
-        include: { items: true, user: true }
+        include: {
+          items: { include: { product: true } },
+          user: true
+        }
       });
 
       return newOrder;
     });
+    
 
     res.status(201).json(result);
 
   } catch (error) {
-    console.error("Sipariş hatası:", error);
-    res.status(400).json({ error: error.message || "Sipariş oluşturulamadı." });
+    console.error("Sipariş Oluşturma Hatası (Log):", error);
+    
+    if (error.message.includes("Stok yetersiz")) {
+        return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: "Sipariş oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin." });
   }
 };
 // --- SİPARİŞLERİMİ GETİR ---

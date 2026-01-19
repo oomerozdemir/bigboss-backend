@@ -114,6 +114,7 @@ model Address {
 }
 
 enum OrderStatus {
+  ODEME_BEKLENIYOR
   SIPARIS_ALINDI
   HAZIRLANIYOR
   KARGOLANDI
