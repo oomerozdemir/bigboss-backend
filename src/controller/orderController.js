@@ -10,77 +10,135 @@ import {
 const prisma = new PrismaClient();
 
 export const createOrder = async (req, res) => {
-  const { items, total, 
-    address, paymentMethod, 
-    couponCode, discountAmount, invoiceType, tcNo, companyName, taxOffice, taxNumber,
-     invoiceAddress, paymentId, status } = req.body;
-  const userId = req.user.id;
-
+  // Kullanıcı giriş yapmışsa ID'yi al, yoksa null (Misafir alışverişi yoksa bu satır hata verebilir, kontrol edin)
+  const userId = req.user ? req.user.id : null; 
+  
+  const { 
+    items, 
+    total, 
+    address, 
+    couponCode, 
+    discountAmount, 
+    paymentMethod,
+    invoiceType,  
+    tcNo,         
+    companyName, 
+    taxOffice,   
+    taxNumber,    
+    invoiceAddress 
+  } = req.body; 
+  
   try {
-    // 1. Stok Kontrolü
-    for (const item of items) {
-      const product = await prisma.product.findUnique({ where: { id: item.productId } });
-      if (!product || product.stock < item.quantity) {
-        return res.status(400).json({ error: `Stok yetersiz: ${product ? product.name : 'Ürün'}` });
-      }
-    }
-
-    // 2. Transaction ile Sipariş Oluşturma ve Stok Düşme
     const result = await prisma.$transaction(async (prisma) => {
       
-      // Stokları düş
+      // 1. Stok Kontrolü ve Güncelleme
       for (const item of items) {
+        // Varyant kontrolü (örn: "38 / Siyah")
+        let variantSize = item.variant; 
+        if (item.variant && item.variant.includes('/')) {
+            variantSize = item.variant.split('/')[0].trim();
+        }
+
+        // Eğer varyantlı ürünse varyant stoğuna bak, yoksa ana ürüne bak
+        const productVariant = await prisma.productVariant.findFirst({
+            where: { 
+                productId: item.productId,
+                size: variantSize
+            }
+        });
+
+        // Varyant varsa onun stoğunu düş
+        if (productVariant) {
+            if (productVariant.stock < item.quantity) {
+                throw new Error(`Yetersiz stok (Varyant): ${item.variant}`);
+            }
+            await prisma.productVariant.update({
+                where: { id: productVariant.id },
+                data: { stock: productVariant.stock - item.quantity }
+            });
+        }
+        
+        // Ayrıca ana ürün stoğunu da düşüyoruz (Genel takip için)
         await prisma.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } }
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } }
         });
       }
 
-      // Siparişi Oluştur
-      const order = await prisma.order.create({
+      // 2. Kupon İşlemleri
+      let couponId = null;
+      if (couponCode) {
+        const coupon = await prisma.coupon.findUnique({
+          where: { code: couponCode.toUpperCase() }
+        });
+
+        if (coupon) {
+          await prisma.coupon.update({
+            where: { id: coupon.id },
+            data: { usedCount: { increment: 1 } }
+          });
+          couponId = coupon.id;
+        }
+      }
+
+      // 3. Siparişi Oluştur
+      const newOrder = await prisma.order.create({
         data: {
-          userId,
-          total: parseFloat(total), // ✅ DÜZELTİLDİ: 'totalPrice' yerine 'total' yazıldı (Schema ile eşleşti)
-          address,
-          paymentMethod,
-          couponCode,
-          discountAmount: parseFloat(discountAmount || 0),
-          paymentStatus: 'PENDING',
-          status: status || 'SIPARIS_ALINDI',
+          userId: userId, // Zorunlu alan
+          total: parseFloat(total), // Decimal'e çevir
+          addressSnapshot: address, // 🟢 DÜZELTME: 'address' verisini 'addressSnapshot' alanına eşledik
+          status: "SIPARIS_ALINDI",
           
+          // Kupon bilgileri
+          couponCode: couponCode || null,
+          couponId: couponId,
+          discountAmount: parseFloat(discountAmount || 0),
+          
+          // Ödeme bilgileri
+          paymentStatus: 'PENDING',
+          paymentMethod: paymentMethod || 'PAYTR',
+
           // Fatura Bilgileri
           invoiceType: invoiceType || 'INDIVIDUAL',
-          tcNo,
-          companyName,
-          taxOffice,
-          taxNumber,
-          invoiceAddress: invoiceAddress || address,
+          tcNo: invoiceType === 'INDIVIDUAL' ? tcNo : null,
+          companyName: invoiceType === 'CORPORATE' ? companyName : null,
+          taxOffice: invoiceType === 'CORPORATE' ? taxOffice : null,
+          taxNumber: invoiceType === 'CORPORATE' ? taxNumber : null,
+          invoiceAddress: invoiceAddress || null,
 
-          // İlişkiler
-          payment: paymentId ? { connect: { id: paymentId } } : undefined,
-          orderItems: {
+          // Sipariş Kalemleri
+          items: {
             create: items.map(item => ({
               productId: item.productId,
-              quantity: item.quantity,
               price: parseFloat(item.price),
+              quantity: item.quantity,
               variant: item.variant
             }))
           }
         },
         include: {
-          orderItems: true,
+          items: {
+            include: { product: true }
+          },
           user: true
         }
       });
 
-      return order;
+      return newOrder;
     });
+    
+    // 4. E-posta gönder (Hata alsa bile sipariş oluşmuş olur)
+    if (result.user && result.user.email) {
+        sendOrderConfirmationEmail(result, result.user)
+        .then(() => console.log(`📧 Sipariş onay e-postası gönderildi: #${result.id}`))
+        .catch(err => console.error('E-posta hatası:', err));
+    }
 
     res.status(201).json(result);
 
   } catch (error) {
-    console.error("Sipariş oluşturma hatası:", error);
-    res.status(500).json({ error: "Sipariş oluşturulamadı." });
+    console.error("Sipariş hatası:", error.message);
+    res.status(400).json({ error: error.message || "Sipariş oluşturulamadı." });
   }
 };
 // --- SİPARİŞLERİMİ GETİR ---
