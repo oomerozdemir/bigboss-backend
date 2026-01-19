@@ -29,16 +29,19 @@ const uploadToCloudinary = async (filePath) => {
 // --- TÜM ÜRÜNLERİ GETİR---
 export const getAllProducts = async (req, res) => {
   try {
-    const { isAdmin, page = 1, limit, search = "" } = req.query;
+    // 1. Query Parametrelerine 'isFeatured' eklendi
+    const { isAdmin, page = 1, limit = 20, search = "", isFeatured } = req.query;
 
     const pageNum = parseInt(page);
-    
-    const limitNum = limit ? parseInt(limit) : 999999; // Veya istediğiniz yüksek bir sayı
+    const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
+    // 2. Filtreleri Oluştur
     const whereClause = {
         AND: [
-            isAdmin === 'true' ? {} : { isActive: true },
+            isAdmin === 'true' ? {} : { isActive: true }, // Admin değilse sadece aktifleri göster
+            // YENİ: Eğer isFeatured=true gönderilirse sadece öne çıkanları filtrele
+            isFeatured === 'true' ? { isFeatured: true } : {}, 
             search ? {
                 OR: [
                     { name: { contains: search, mode: 'insensitive' } },
@@ -48,8 +51,10 @@ export const getAllProducts = async (req, res) => {
         ]
     };
 
+    // 3. Toplam Kayıt Sayısını Bul
     const totalCount = await prisma.product.count({ where: whereClause });
 
+    // 4. Verileri Çek
     const products = await prisma.product.findMany({
       where: whereClause,
       include: {
@@ -61,18 +66,19 @@ export const getAllProducts = async (req, res) => {
       take: limitNum
     });
 
+    // 5. Yanıt Dön
     res.json({
         products,
         meta: {
             totalCount,
-            totalPages: limit ? Math.ceil(totalCount / limitNum) : 1,
+            totalPages: Math.ceil(totalCount / limitNum),
             currentPage: pageNum,
             limit: limitNum
         }
     });
 
   } catch (error) {
-    console.error("getAllProducts Error:", error);
+    console.error(error);
     res.status(500).json({ error: "Ürünler getirilemedi." });
   }
 };
