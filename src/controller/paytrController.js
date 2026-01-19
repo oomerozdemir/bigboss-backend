@@ -2,6 +2,7 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
+import { sendOrderConfirmationEmail } from '../utils/emailService';
 
 const prisma = new PrismaClient();
 
@@ -191,15 +192,13 @@ export const paytrCallback = async (req, res) => {
 
       // 3. 🛡️ GÜVENLİ MAİL GÖNDERİMİ (Try-Catch Eklendi)
       try {
-          console.log(`💰 Ödeme Başarılı! Mail gönderiliyor: ${updatedOrder.user?.email}`);
           if (updatedOrder.user && updatedOrder.user.email) {
-              await sendOrderEmail(updatedOrder.user.email, updatedOrder, 'CREATED');
+              console.log(`📧 Ödeme Onaylandı. Mail gönderiliyor: ${updatedOrder.user.email}`);
+              await sendOrderConfirmationEmail(updatedOrder, updatedOrder.user);
           }
       } catch (mailError) {
-          console.error("⚠️ Mail gönderilemedi ama ödeme alındı:", mailError.message);
-          // Hata olsa bile kod devam edecek ve PayTR'ye OK dönecek
+          console.error("⚠️ Mail gönderilemedi (Ödeme başarılı):", mailError);
       }
-
       return res.status(200).send('OK');
       
     } else {

@@ -10,95 +10,49 @@ import {
 const prisma = new PrismaClient();
 
 export const createOrder = async (req, res) => {
-  // Kullanıcı giriş yapmışsa ID'yi al, yoksa null (Misafir alışverişi yoksa bu satır hata verebilir, kontrol edin)
-  const userId = req.user ? req.user.id : null; 
-  
-  const { 
-    items, 
-    total, 
-    address, 
-    couponCode, 
-    discountAmount, 
-    paymentMethod,
-    invoiceType,  
-    tcNo,         
-    companyName, 
-    taxOffice,   
-    taxNumber,    
-    invoiceAddress 
-  } = req.body; 
-  
+  const userId = req.user ? req.user.id : null;
+  const { items, total, address, couponCode, discountAmount, paymentMethod, invoiceType, tcNo, companyName, taxOffice, taxNumber, invoiceAddress } = req.body;
+
   try {
     const result = await prisma.$transaction(async (prisma) => {
-      
-      // 1. Stok Kontrolü ve Güncelleme
+      // 1. Stok Kontrolü ve Düşümü (Aynı kalıyor)
       for (const item of items) {
-        // Varyant kontrolü (örn: "38 / Siyah")
-        let variantSize = item.variant; 
-        if (item.variant && item.variant.includes('/')) {
-            variantSize = item.variant.split('/')[0].trim();
-        }
-
-        // Eğer varyantlı ürünse varyant stoğuna bak, yoksa ana ürüne bak
-        const productVariant = await prisma.productVariant.findFirst({
-            where: { 
-                productId: item.productId,
-                size: variantSize
-            }
-        });
-
-        // Varyant varsa onun stoğunu düş
-        if (productVariant) {
-            if (productVariant.stock < item.quantity) {
-                throw new Error(`Yetersiz stok (Varyant): ${item.variant}`);
-            }
-            await prisma.productVariant.update({
-                where: { id: productVariant.id },
-                data: { stock: productVariant.stock - item.quantity }
-            });
-        }
+        let variantSize = item.variant && item.variant.includes('/') ? item.variant.split('/')[0].trim() : item.variant;
         
-        // Ayrıca ana ürün stoğunu da düşüyoruz (Genel takip için)
-        await prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: { decrement: item.quantity } }
-        });
+        if (variantSize) {
+            const productVariant = await prisma.productVariant.findFirst({ where: { productId: item.productId, size: variantSize } });
+            if (productVariant) {
+                if (productVariant.stock < item.quantity) throw new Error(`Stok yetersiz: ${item.variant}`);
+                await prisma.productVariant.update({ where: { id: productVariant.id }, data: { stock: { decrement: item.quantity } } });
+            }
+        }
+        await prisma.product.update({ where: { id: item.productId }, data: { stock: { decrement: item.quantity } } });
       }
 
-      // 2. Kupon İşlemleri
+      // 2. Kupon Kullanımı (Aynı kalıyor)
       let couponId = null;
       if (couponCode) {
-        const coupon = await prisma.coupon.findUnique({
-          where: { code: couponCode.toUpperCase() }
-        });
-
+        const coupon = await prisma.coupon.findUnique({ where: { code: couponCode.toUpperCase() } });
         if (coupon) {
-          await prisma.coupon.update({
-            where: { id: coupon.id },
-            data: { usedCount: { increment: 1 } }
-          });
+          await prisma.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
           couponId = coupon.id;
         }
       }
 
-      // 3. Siparişi Oluştur
+      // 3. Sipariş Oluşturma (DURUM: ODEME_BEKLENIYOR)
       const newOrder = await prisma.order.create({
         data: {
-          userId: userId, // Zorunlu alan
-          total: parseFloat(total), // Decimal'e çevir
-          addressSnapshot: address, // 🟢 DÜZELTME: 'address' verisini 'addressSnapshot' alanına eşledik
-          status: "SIPARIS_ALINDI",
+          userId,
+          total: parseFloat(total),
+          addressSnapshot: address,
+          status: "ODEME_BEKLENIYOR", 
           
-          // Kupon bilgileri
           couponCode: couponCode || null,
-          couponId: couponId,
+          couponId,
           discountAmount: parseFloat(discountAmount || 0),
-          
-          // Ödeme bilgileri
           paymentStatus: 'PENDING',
           paymentMethod: paymentMethod || 'PAYTR',
 
-          // Fatura Bilgileri
           invoiceType: invoiceType || 'INDIVIDUAL',
           tcNo: invoiceType === 'INDIVIDUAL' ? tcNo : null,
           companyName: invoiceType === 'CORPORATE' ? companyName : null,
@@ -106,7 +60,6 @@ export const createOrder = async (req, res) => {
           taxNumber: invoiceType === 'CORPORATE' ? taxNumber : null,
           invoiceAddress: invoiceAddress || null,
 
-          // Sipariş Kalemleri
           items: {
             create: items.map(item => ({
               productId: item.productId,
@@ -116,50 +69,34 @@ export const createOrder = async (req, res) => {
             }))
           }
         },
-        include: {
-          items: {
-            include: { product: true }
-          },
-          user: true
-        }
+        include: { items: true, user: true }
       });
 
       return newOrder;
     });
-    
-    // 4. E-posta gönder (Hata alsa bile sipariş oluşmuş olur)
-    if (result.user && result.user.email) {
-        sendOrderConfirmationEmail(result, result.user)
-        .then(() => console.log(`📧 Sipariş onay e-postası gönderildi: #${result.id}`))
-        .catch(err => console.error('E-posta hatası:', err));
-    }
 
     res.status(201).json(result);
 
   } catch (error) {
-    console.error("Sipariş hatası:", error.message);
+    console.error("Sipariş hatası:", error);
     res.status(400).json({ error: error.message || "Sipariş oluşturulamadı." });
   }
 };
 // --- SİPARİŞLERİMİ GETİR ---
+// Sadece ödemesi tamamlanmış veya aktif siparişleri getir
 export const getMyOrders = async (req, res) => {
-  const userId = req.user.id;
   try {
     const orders = await prisma.order.findMany({
-      where: { userId },
-      include: { 
-        items: {
-          include: { product: true } 
-        },
-        returnRequest: true,
-        payments: true
+      where: { 
+          userId: req.user.id,
+          status: { not: 'ODEME_BEKLENIYOR' } 
       },
+      include: { items: { include: { product: true } } },
       orderBy: { createdAt: 'desc' }
     });
     res.json(orders);
   } catch (error) {
-    console.error("Sipariş getirme hatası:", error);
-    res.status(500).json({ error: "Siparişler getirilemedi." });
+    res.status(500).json({ error: "Siparişler alınamadı" });
   }
 };
 
