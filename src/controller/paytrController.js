@@ -4,15 +4,16 @@ import { sendOrderConfirmationEmail } from '../utils/emailService.js';
 
 const prisma = new PrismaClient();
 
-// PayTR Konfigürasyonu
 const PAYTR_CONFIG = {
   merchant_id: process.env.PAYTR_MERCHANT_ID,
   merchant_key: process.env.PAYTR_MERCHANT_KEY,
   merchant_salt: process.env.PAYTR_MERCHANT_SALT,
   test_mode: process.env.PAYTR_TEST_MODE === 'true' ? '1' : '0',
+  // Burası sadece Token alındıktan sonra iframe'in src'sine konulacak temel adres
+  iframe_base_url: 'https://www.paytr.com/odeme/guvenli/', 
 };
 
-// ✅ DÜZELTME: request library yerine fetch kullan
+// 1. TOKEN OLUŞTURMA (Frontend bu endpoint'e istek atar)
 export const createPaymentToken = async (req, res) => {
   try {
     const { 
@@ -20,16 +21,20 @@ export const createPaymentToken = async (req, res) => {
       merchant_oid, payment_amount, user_ip 
     } = req.body;
 
+    console.log("PayTR Token İsteği Başladı:", merchant_oid);
+
     const BACKEND_URL = "https://bigboss-backend.onrender.com";
 
-    // Zorunlu alanları hazırla
+    // Zorunlu alanlar
     const no_installment = 0;
     const max_installment = 0;
     const currency = 'TL';
     
+    // Hash Oluşturma
     const hashSTR = `${PAYTR_CONFIG.merchant_id}${user_ip}${merchant_oid}${user_email}${payment_amount}${user_basket}${no_installment}${max_installment}${currency}${PAYTR_CONFIG.test_mode}`;
     const paytr_token = crypto.createHmac('sha256', PAYTR_CONFIG.merchant_key).update(hashSTR + PAYTR_CONFIG.merchant_salt).digest('base64');
 
+    // PayTR API'ye gönderilecek veriler
     const params = new URLSearchParams();
     params.append('merchant_id', PAYTR_CONFIG.merchant_id);
     params.append('user_ip', user_ip);
@@ -45,7 +50,7 @@ export const createPaymentToken = async (req, res) => {
     params.append('user_address', user_address);
     params.append('user_phone', user_phone);
     
-    // ✅ Yönlendirme Ayarları
+    // Yönlendirme Ayarları
     params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/success`);
     params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/fail`);
     
@@ -53,7 +58,8 @@ export const createPaymentToken = async (req, res) => {
     params.append('currency', currency);
     params.append('test_mode', PAYTR_CONFIG.test_mode);
 
-    const response = await fetch(PAYTR_CONFIG.iframe_url, {
+    // 🔴 KRİTİK DÜZELTME: Token almak için doğru API adresi burasıdır
+    const response = await fetch('https://www.paytr.com/odeme/api/get-token', {
       method: 'POST',
       body: params
     });
@@ -61,17 +67,23 @@ export const createPaymentToken = async (req, res) => {
     const result = await response.json();
 
     if (result.status === 'success') {
-      res.json({ success: true, iframe_url: `https://www.paytr.com/odeme/guvenli/${result.token}` });
+      // Token başarıyla alındı, iframe linkini oluşturup dönüyoruz
+      res.json({ 
+        success: true, 
+        iframe_url: `${PAYTR_CONFIG.iframe_base_url}${result.token}` 
+      });
     } else {
+      console.error("PayTR Token Hatası:", result.reason);
       res.status(400).json({ success: false, message: result.reason });
     }
 
   } catch (error) {
-    console.error("PayTR Token Error:", error);
-    res.status(500).json({ success: false, message: "Sunucu hatası" });
+    console.error("PayTR Sunucu Hatası:", error);
+    res.status(500).json({ success: false, message: "Sunucu hatası: " + error.message });
   }
 };
-// ✅ PayTR Callback
+
+// 2. CALLBACK (IPN)
 export const paytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
@@ -82,7 +94,14 @@ export const paytrCallback = async (req, res) => {
       return res.status(400).send('PAYTR notification failed: bad hash');
     }
 
-    const orderId = parseInt(merchant_oid.replace(/\D/g, ''));
+    // Sipariş ID'sini çözümle (Örn: "ORDER-123" -> 123)
+    const orderIdRaw = merchant_oid.replace(/\D/g, '');
+    const orderId = orderIdRaw ? parseInt(orderIdRaw) : null;
+
+    if (!orderId) {
+       console.error("Geçersiz Sipariş ID:", merchant_oid);
+       return res.status(200).send('OK');
+    }
 
     if (status === 'success') {
       const updatedOrder = await prisma.order.update({
@@ -106,9 +125,13 @@ export const paytrCallback = async (req, res) => {
     res.status(500).send('Error');
   }
 };
-// ✅ Ödeme Başarılı Handler
+
+// 3. YARDIMCI ENDPOINTLER
+export const checkPaymentStatus = async (req, res) => res.status(200).json({ message: "OK" });
+export const testPayment = async (req, res) => res.status(200).json({ message: "OK" });
+
+// 4. BAŞARILI ÖDEME YÖNLENDİRMESİ
 export const handlePaymentSuccess = (req, res) => {
-  // GET veya POST gelebilir, her ikisini de güvenli oku
   const body = req.body || {};
   const query = req.query || {};
   const merchant_oid = body.merchant_oid || query.merchant_oid || '';
@@ -123,8 +146,7 @@ export const handlePaymentSuccess = (req, res) => {
           }), '*');
         </script>
         <div style="text-align:center; padding:20px; font-family:sans-serif;">
-          <h3>İşlem Başarılı!</h3>
-          <p>Sipariş numaranız: ${merchant_oid}</p>
+          <h3>Ödeme Başarılı!</h3>
           <p>Yönlendiriliyorsunuz...</p>
         </div>
       </body>
@@ -133,11 +155,11 @@ export const handlePaymentSuccess = (req, res) => {
   res.send(htmlContent);
 };
 
+// 5. BAŞARISIZ ÖDEME YÖNLENDİRMESİ
 export const handlePaymentFail = (req, res) => {
   const body = req.body || {};
   const query = req.query || {};
-  
-  const reason = body.failed_reason_msg || query.failed_reason_msg || 'Ödeme başarısız';
+  const reason = body.failed_reason_msg || query.failed_reason_msg || 'İşlem başarısız';
   const merchant_oid = body.merchant_oid || query.merchant_oid || '';
 
   const htmlContent = `
@@ -151,75 +173,11 @@ export const handlePaymentFail = (req, res) => {
           }), '*');
         </script>
         <div style="text-align:center; padding:20px; font-family:sans-serif; color:red;">
-          <h3>İşlem Başarısız!</h3>
-          <p>Sebep: ${reason}</p>
+          <h3>Ödeme Başarısız</h3>
+          <p>${reason}</p>
         </div>
       </body>
     </html>
   `;
   res.send(htmlContent);
-};
-
-// ✅ Ödeme Durumu Sorgulama
-export const checkPaymentStatus = async (req, res) => {
-  try {
-    const { orderId } = req.params;
-
-    const payment = await prisma.payment.findFirst({
-      where: { orderId: parseInt(orderId) },
-      orderBy: { createdAt: 'desc' },
-      include: { order: true }
-    });
-
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ödeme bulunamadı'
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      payment: {
-        orderId: payment.orderId,
-        status: payment.status,
-        amount: payment.amount,
-        paidAt: payment.paidAt,
-        failureReason: payment.failureReason
-      }
-    });
-
-  } catch (error) {
-    console.error('Payment Status Check Error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Ödeme durumu sorgulanamadı',
-      error: error.message
-    });
-  }
-};
-
-// ✅ Test Ödeme (Development only)
-export const testPayment = async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({ 
-      message: 'Test ödeme sadece development modda kullanılabilir' 
-    });
-  }
-
-  const testData = {
-    user_basket: Buffer.from(JSON.stringify([
-      ['Test Ürün', '10000', 1]
-    ])).toString('base64'),
-    user_name: 'Test Kullanıcı',
-    user_address: 'Test Adres, İstanbul',
-    user_phone: '05551234567',
-    user_email: 'test@test.com',
-    merchant_oid: 'TEST-' + Date.now(),
-    payment_amount: '10000',
-    user_ip: req.ip
-  };
-
-  req.body = testData;
-  return createPaymentToken(req, res);
 };
