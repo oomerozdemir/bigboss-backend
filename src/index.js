@@ -36,7 +36,19 @@ app.use(cors({
 
 // 🟢 2. ADIM: DİĞER TEMEL AYARLAR
 app.set('trust proxy', 1); 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "script-src": ["'self'", "'unsafe-inline'", "https://www.paytr.com"],
+      "frame-src": ["'self'", "https://www.paytr.com"],
+      "img-src": ["'self'", "data:", "https:"],
+      "connect-src": ["'self'", "https://www.paytr.com", "https://bigboss-backend.onrender.com"]
+    },
+  },
+  // Iframe içinde sitenizin çalışmasına izin verir (Cross-Origin)
+  crossOriginResourcePolicy: false, 
+}));
 app.use(express.urlencoded({ extended: true })); 
 app.use(json({ limit: '10kb' })); 
 app.use(hpp());
