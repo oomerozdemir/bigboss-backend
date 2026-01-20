@@ -17,140 +17,64 @@ const PAYTR_CONFIG = {
 export const createPaymentToken = async (req, res) => {
   try {
     const { 
-      user_basket, 
-      user_name, 
-      user_address, 
-      user_phone, 
-      user_email,
-      merchant_oid, // Frontend'den gelen Sipariş ID (örn: 15)
-      payment_amount, 
-      user_ip 
+      user_basket, user_name, user_address, user_phone, user_email,
+      merchant_oid, payment_amount, user_ip 
     } = req.body;
 
-    console.log("PayTR İsteği Geldi:", req.body); // Debug için log
+    // Backend URL (Canlı adresiniz)
+    const BACKEND_URL = "https://bigboss-backend.onrender.com";
 
-    // 1. Validasyon
-    if (!merchant_oid || !payment_amount || !user_email) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Eksik ödeme bilgisi (merchant_oid, amount veya email eksik)' 
-      });
-    }
-
-    // 2. Siparişin veritabanında olup olmadığını kontrol et
-    const order = await prisma.order.findUnique({
-      where: { id: parseInt(merchant_oid) }
-    });
-
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: `Sipariş bulunamadı (ID: ${merchant_oid})`
-      });
-    }
-
-    // 3. PayTR Parametreleri
-    const merchant_id = PAYTR_CONFIG.merchant_id;
-    const merchant_key = PAYTR_CONFIG.merchant_key;
-    const merchant_salt = PAYTR_CONFIG.merchant_salt;
-    
-    const merchant_ok_url = `${process.env.FRONTEND_URL}/payment-success`;
-    const merchant_fail_url = `${process.env.FRONTEND_URL}/payment-failed`;
-    
-    const user_ip_address = user_ip || req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
-    const amountStr = payment_amount.toString(); // String olmalı
-
-    // 4. Hash Oluşturma (Sıralama Çok Önemli!)
-    // merchant_id + user_ip + merchant_oid + email + payment_amount + user_basket + no_installment + max_installment + currency + test_mode
-    const hashSTR = 
-      merchant_id + 
-      user_ip_address + 
-      merchant_oid + 
-      user_email + 
-      amountStr + 
-      (user_basket || '') + 
-      '0' + // no_installment
-      '0' + // max_installment
-      'TL' + 
-      PAYTR_CONFIG.test_mode;
-    
-    const paytr_token = hashSTR + merchant_salt;
-    const token = crypto.createHmac('sha256', merchant_key).update(paytr_token).digest('base64');
-
-    // 5. PayTR API'ye İstek
-    const paytr_data = {
-      merchant_id,
-      user_ip: user_ip_address,
-      merchant_oid,
-      email: user_email,
-      payment_amount: amountStr,
-      paytr_token: token,
-      user_basket: user_basket || '',
-      debug_on: '1',
-      test_mode: PAYTR_CONFIG.test_mode,
-      no_installment: '0',
-      max_installment: '0',
-      user_name,
-      user_address,
-      user_phone,
-      merchant_ok_url,
-      merchant_fail_url,
-      timeout_limit: '30',
-      currency: 'TL',
-      lang: 'tr',
-      payment_type: 'card'
+    // Token İsteği Seçenekleri
+    const options = {
+      method: 'POST',
+      uri: PAYTR_CONFIG.iframe_url,
+      form: {
+        merchant_id: PAYTR_CONFIG.merchant_id,
+        user_ip: user_ip || '0.0.0.0',
+        merchant_oid: merchant_oid,
+        email: user_email,
+        payment_amount: payment_amount,
+        paytr_token: "", // Hesapla aşağıda
+        user_basket: user_basket,
+        debug_on: 1,
+        no_installment: 0,
+        max_installment: 0,
+        user_name: user_name,
+        user_address: user_address,
+        user_phone: user_phone,
+        
+        // 🔴 İŞTE BURASI: PayTR işlemi bitince Backend'e dönsün
+        merchant_ok_url: `${BACKEND_URL}/api/paytr/success`,
+        merchant_fail_url: `${BACKEND_URL}/api/paytr/fail`,
+        
+        timeout_limit: 30,
+        currency: 'TL',
+        test_mode: PAYTR_CONFIG.test_mode
+      }
     };
 
-    const formData = new URLSearchParams(paytr_data);
+    // Hash Hesaplama
+    const hashSTR = `${PAYTR_CONFIG.merchant_id}${user_ip || '0.0.0.0'}${merchant_oid}${user_email}${payment_amount}${options.form.user_basket}${options.form.no_installment}${options.form.max_installment}${options.form.currency}${PAYTR_CONFIG.test_mode}`;
+    const paytr_token = crypto.createHmac('sha256', PAYTR_CONFIG.merchant_key).update(hashSTR + PAYTR_CONFIG.merchant_salt).digest('base64');
+    options.form.paytr_token = paytr_token;
 
-    const response = await fetch('https://www.paytr.com/odeme/api/get-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData
-    });
+    // PayTR'den Token İste
+    const result = await request(options);
+    const parsedResult = JSON.parse(result);
 
-    const result = await response.json();
-
-    if (result.status === 'success') {
-      // Başarılı ise Payment kaydı oluştur (Opsiyonel, hata verirse burayı try-catch içine alabilirsiniz)
-      try {
-        await prisma.payment.create({
-          data: {
-            orderId: parseInt(merchant_oid),
-            userId: req.user?.id || order.userId,
-            amount: parseFloat(payment_amount) / 100,
-            status: 'PENDING',
-            paytrToken: result.token,
-            paymentMethod: 'PAYTR',
-          }
-        });
-      } catch (dbError) {
-        console.error("Payment kayıt hatası:", dbError);
-        // Payment kaydı oluşmasa bile token dönsün, akış bozulmasın
-      }
-
-      return res.status(200).json({
-        success: true,
-        token: result.token,
-        iframe_url: PAYTR_CONFIG.iframe_url + result.token
-      });
+    if (parsedResult.status === 'success') {
+      res.json({ success: true, iframe_url: `https://www.paytr.com/odeme/guvenli/${parsedResult.token}` });
     } else {
-      console.error("PayTR Token Hatası:", result.reason);
-      return res.status(400).json({
-        success: false,
-        message: result.reason || 'PayTR token oluşturulamadı'
-      });
+      res.status(400).json({ success: false, message: parsedResult.reason });
     }
 
   } catch (error) {
-    console.error('PayTR Controller Error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Sunucu hatası',
-      error: error.message
-    });
+    console.error("PayTR Token Error:", error);
+    res.status(500).json({ success: false, message: "Ödeme başlatılamadı" });
   }
 };
+
+
 // ✅ PayTR Callback (IPN - Instant Payment Notification)
 export const paytrCallback = async (req, res) => {
   try {
@@ -285,4 +209,45 @@ export const testPayment = async (req, res) => {
 
   req.body = testData;
   return createPaymentToken(req, res);
+};
+
+export const handlePaymentSuccess = (req, res) => {
+  // PayTR POST body'sinden sipariş numarasını alıyoruz
+  const merchant_oid = req.body.merchant_oid; 
+
+  const htmlContent = `
+    <html>
+      <body>
+        <script>
+          // Mesaja sipariş numarasını da ekliyoruz
+          window.parent.postMessage(JSON.stringify({ 
+            status: 'success', 
+            merchant_oid: "${merchant_oid}" 
+          }), '*');
+        </script>
+      </body>
+    </html>
+  `;
+  res.send(htmlContent);
+};
+
+export const handlePaymentFail = (req, res) => {
+  const reason = req.body.failed_reason_msg || 'Ödeme başarısız';
+  // Hata durumunda da ekleyelim (Opsiyonel)
+  const merchant_oid = req.body.merchant_oid;
+
+  const htmlContent = `
+    <html>
+      <body>
+        <script>
+          window.parent.postMessage(JSON.stringify({ 
+            status: 'failed', 
+            reason: "${reason}",
+            merchant_oid: "${merchant_oid}"
+          }), '*');
+        </script>
+      </body>
+    </html>
+  `;
+  res.send(htmlContent);
 };
