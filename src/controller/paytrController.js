@@ -1,19 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
-import fetch from 'node-fetch';
 import { sendOrderConfirmationEmail } from '../utils/emailService.js';
 
 const prisma = new PrismaClient();
 
+// PayTR Konfigürasyonu
 const PAYTR_CONFIG = {
   merchant_id: process.env.PAYTR_MERCHANT_ID,
   merchant_key: process.env.PAYTR_MERCHANT_KEY,
   merchant_salt: process.env.PAYTR_MERCHANT_SALT,
   test_mode: process.env.PAYTR_TEST_MODE === 'true' ? '1' : '0',
-  iframe_url: 'https://www.paytr.com/odeme/guvenli/',
 };
 
-// 1. TOKEN OLUŞTURMA
+// ✅ DÜZELTME: request library yerine fetch kullan
 export const createPaymentToken = async (req, res) => {
   try {
     const { 
@@ -72,8 +71,7 @@ export const createPaymentToken = async (req, res) => {
     res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };
-
-// 2. CALLBACK (IPN)
+// ✅ PayTR Callback
 export const paytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
@@ -108,18 +106,7 @@ export const paytrCallback = async (req, res) => {
     res.status(500).send('Error');
   }
 };
-
-// 3. ÖDEME SORGULAMA
-export const checkPaymentStatus = async (req, res) => {
-    res.status(200).json({ message: "Status check ok" });
-};
-
-// 4. TEST ENDPOINT
-export const testPayment = async (req, res) => {
-    res.status(200).json({ message: "Test ok" });
-};
-
-// ✅ 5. BAŞARILI ÖDEME YÖNLENDİRMESİ (Hata Düzeltildi)
+// ✅ Ödeme Başarılı Handler
 export const handlePaymentSuccess = (req, res) => {
   // GET veya POST gelebilir, her ikisini de güvenli oku
   const body = req.body || {};
@@ -146,7 +133,6 @@ export const handlePaymentSuccess = (req, res) => {
   res.send(htmlContent);
 };
 
-// ✅ 6. BAŞARISIZ ÖDEME YÖNLENDİRMESİ
 export const handlePaymentFail = (req, res) => {
   const body = req.body || {};
   const query = req.query || {};
@@ -172,4 +158,68 @@ export const handlePaymentFail = (req, res) => {
     </html>
   `;
   res.send(htmlContent);
+};
+
+// ✅ Ödeme Durumu Sorgulama
+export const checkPaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const payment = await prisma.payment.findFirst({
+      where: { orderId: parseInt(orderId) },
+      orderBy: { createdAt: 'desc' },
+      include: { order: true }
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ödeme bulunamadı'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      payment: {
+        orderId: payment.orderId,
+        status: payment.status,
+        amount: payment.amount,
+        paidAt: payment.paidAt,
+        failureReason: payment.failureReason
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment Status Check Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Ödeme durumu sorgulanamadı',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Test Ödeme (Development only)
+export const testPayment = async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ 
+      message: 'Test ödeme sadece development modda kullanılabilir' 
+    });
+  }
+
+  const testData = {
+    user_basket: Buffer.from(JSON.stringify([
+      ['Test Ürün', '10000', 1]
+    ])).toString('base64'),
+    user_name: 'Test Kullanıcı',
+    user_address: 'Test Adres, İstanbul',
+    user_phone: '05551234567',
+    user_email: 'test@test.com',
+    merchant_oid: 'TEST-' + Date.now(),
+    payment_amount: '10000',
+    user_ip: req.ip
+  };
+
+  req.body = testData;
+  return createPaymentToken(req, res);
 };
