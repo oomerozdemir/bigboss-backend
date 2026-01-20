@@ -187,60 +187,50 @@ export const paytrCallback = async (req, res) => {
 
 // ✅ Ödeme Başarılı Handler
 export const handlePaymentSuccess = (req, res) => {
-  const merchant_oid = req.body.merchant_oid || req.query.merchant_oid;
+  // ✅ HEM BODY (POST) HEM QUERY (GET) KONTROL EDİLİR
+  const merchant_oid = req.body.merchant_oid || req.query.merchant_oid; 
 
   const htmlContent = `
-    <!DOCTYPE html>
     <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Ödeme Başarılı</title>
-      </head>
       <body>
-        <h2>Ödeme başarılı! Yönlendiriliyorsunuz...</h2>
         <script>
-          console.log('✅ Payment Success - Sending message to parent');
           window.parent.postMessage(JSON.stringify({ 
             status: 'success', 
-            merchant_oid: "${merchant_oid}" 
+            merchant_oid: "${merchant_oid || ''}" 
           }), '*');
         </script>
+        <div style="text-align:center; font-family:sans-serif;">
+            <h3>İşlem Başarılı! Yönlendiriliyorsunuz...</h3>
+        </div>
       </body>
     </html>
   `;
-  
   res.send(htmlContent);
 };
 
-// ✅ Ödeme Başarısız Handler
 export const handlePaymentFail = (req, res) => {
-  const reason = req.body.failed_reason_msg || req.query.reason || 'Ödeme başarısız';
+  // ✅ HEM BODY HEM QUERY KONTROLÜ
+  const reason = req.body.failed_reason_msg || req.query.failed_reason_msg || 'Ödeme başarısız';
   const merchant_oid = req.body.merchant_oid || req.query.merchant_oid;
 
   const htmlContent = `
-    <!DOCTYPE html>
     <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Ödeme Başarısız</title>
-      </head>
       <body>
-        <h2>Ödeme başarısız: ${reason}</h2>
         <script>
-          console.log('❌ Payment Failed - Sending message to parent');
           window.parent.postMessage(JSON.stringify({ 
             status: 'failed', 
             reason: "${reason}",
-            merchant_oid: "${merchant_oid}"
+            merchant_oid: "${merchant_oid || ''}"
           }), '*');
         </script>
+        <div style="text-align:center; font-family:sans-serif; color:red;">
+            <h3>İşlem Başarısız! Yönlendiriliyorsunuz...</h3>
+        </div>
       </body>
     </html>
   `;
-  
   res.send(htmlContent);
 };
-
 // ✅ Ödeme Durumu Sorgulama
 export const checkPaymentStatus = async (req, res) => {
   try {

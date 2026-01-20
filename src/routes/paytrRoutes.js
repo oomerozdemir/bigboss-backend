@@ -12,7 +12,7 @@ router.get('/status/:orderId', protect, checkPaymentStatus);
 
 router.post('/test', testPayment);
 
-router.post('/success', handlePaymentSuccess);
-router.post('/fail', handlePaymentFail);
+router.all('/success', handlePaymentSuccess); 
+router.all('/fail', handlePaymentFail);
 
 export default router;
