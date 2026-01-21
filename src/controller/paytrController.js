@@ -120,22 +120,25 @@ export const paytrCallback = async (req, res) => {
       }
 
       // B. Order Tablosunu Güncelle (🔴 paidAt KALDIRILDI)
-      const updatedOrder = await prisma.order.update({
-        where: { id: orderId },
+     const updatedOrder = await prisma.order.update({
+        where: { id: orderId }, // veya parseInt(merchant_oid)
         data: { 
           status: 'SIPARIS_ALINDI', 
-          paymentStatus: 'SUCCESS',
-          // paidAt: new Date()  <-- BU SATIR HATALIYDI VE SİLİNDİ
+          paymentStatus: 'SUCCESS'
         },
-        include: { user: true } 
+        include: { 
+            user: true,
+            items: { include: { product: true } } // ✅ BU SATIRI EKLEYİN (Mail için şart)
+        } 
       });
 
-      // Mail Gönderimi
+      // Mail Gönderimi (Artık hata vermeyecek)
       try {
           if (updatedOrder.user?.email) {
             await sendOrderConfirmationEmail(updatedOrder, updatedOrder.user);
           }
       } catch (e) { console.error("Mail hatası:", e); }
+
 
     } else {
       // Başarısız Durum

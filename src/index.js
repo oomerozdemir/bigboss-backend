@@ -42,19 +42,17 @@ app.use(helmet({
     directives: {
       "script-src": ["'self'", "'unsafe-inline'", "https://www.paytr.com"],
       "frame-src": ["'self'", "https://www.paytr.com"],
+      "connect-src": ["'self'", "https://www.paytr.com", "https://bigboss-backend.onrender.com"],
       "img-src": ["'self'", "data:", "https:"],
-      "connect-src": ["'self'", "https://www.paytr.com", "https://bigboss-backend.onrender.com"]
     },
   },
-  // Iframe içinde sitenizin çalışmasına izin verir (Cross-Origin)
-  crossOriginResourcePolicy: false, 
+  crossOriginResourcePolicy: false,
 }));
 app.use(express.urlencoded({ extended: true })); 
 app.use(json({ limit: '10kb' })); 
 app.use(hpp());
 
 // 🟢 3. ADIM: PAYTR ROTASI (Rate Limit'e takılmaması için önce tanımlıyoruz)
-// Not: PayTR sunucuları bazen ardışık istek atabilir, bu yüzden limit dışında tutuyoruz.
 app.use('/api/paytr', paytrRoutes);
 
 // 🟢 4. ADIM: RATE LIMITER (Diğer rotalar için)
