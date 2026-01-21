@@ -9,6 +9,8 @@ router.get('/', protect, orderController.getMyOrders);  // Siparişleri Gör
 
 router.get('/admin/all', protectAdmin, orderController.getAllOrders);
 
+router.get('/payment-status/:orderId', protect, checkOrderPaymentStatus);
+
 router.put('/admin/status/:id', protectAdmin, orderController.updateOrderStatus);
 
 export default router;

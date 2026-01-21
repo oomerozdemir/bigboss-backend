@@ -16,7 +16,7 @@ router.get('/status/:orderId', protect, checkPaymentStatus);
 router.post('/test', testPayment);
 
 // ✅ Hem GET hem POST isteklerini kabul et (500 ve 404 hatalarını önler)
-router.all('/success', handlePaymentSuccess);
-router.all('/fail', handlePaymentFail);
+//router.all('/success', handlePaymentSuccess);
+//router.all('/fail', handlePaymentFail);
 
 export default router;

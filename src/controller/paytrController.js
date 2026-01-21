@@ -1,3 +1,5 @@
+// controller/paytrController.js - SIMPLIFIED (NO SUCCESS/FAIL HANDLERS)
+
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { sendOrderConfirmationEmail } from '../utils/emailService.js';
@@ -20,9 +22,9 @@ export const createPaymentToken = async (req, res) => {
       merchant_oid, payment_amount, user_ip 
     } = req.body;
 
-    console.log("PayTR Token İsteği Başladı:", merchant_oid);
+    console.log("📤 PayTR Token İsteği:", merchant_oid);
 
-    const BACKEND_URL = "https://bigboss-backend.onrender.com";
+    const BACKEND_URL = process.env.BACKEND_URL || "https://bigboss-backend.onrender.com";
 
     const no_installment = 0;
     const max_installment = 0;
@@ -46,8 +48,9 @@ export const createPaymentToken = async (req, res) => {
     params.append('user_address', user_address);
     params.append('user_phone', user_phone);
     
-    params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/success`);
-    params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/fail`);
+    // ✅ Sadece callback URL - success/fail URL'leri KALDIRILDI
+    params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/callback`);
+    params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/callback`);
     
     params.append('timeout_limit', '30');
     params.append('currency', currency);
@@ -61,170 +64,100 @@ export const createPaymentToken = async (req, res) => {
     const result = await response.json();
 
     if (result.status === 'success') {
+      console.log('✅ PayTR token alındı');
       res.json({ 
         success: true, 
         iframe_url: `${PAYTR_CONFIG.iframe_base_url}${result.token}` 
       });
     } else {
-      console.error("PayTR Token Hatası:", result.reason);
+      console.error("❌ PayTR Token Hatası:", result.reason);
       res.status(400).json({ success: false, message: result.reason });
     }
 
   } catch (error) {
-    console.error("PayTR Sunucu Hatası:", error);
+    console.error("❌ PayTR Sunucu Hatası:", error);
     res.status(500).json({ success: false, message: "Sunucu hatası: " + error.message });
   }
 };
 
-// 2. CALLBACK (DÜZELTİLDİ)
+// 2. CALLBACK (SADECE DB GÜNCELLEMESİ - HTML DÖNMÜYOR)
 export const paytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
+    
+    console.log('📨 PayTR Callback alındı:', { merchant_oid, status });
+
+    // Hash doğrula
     const hashSTR = merchant_oid + PAYTR_CONFIG.merchant_salt + status + total_amount;
     const calculated_hash = crypto.createHmac('sha256', PAYTR_CONFIG.merchant_key).update(hashSTR).digest('base64');
 
     if (hash !== calculated_hash) {
+      console.error('❌ Hash doğrulanamadı!');
       return res.status(400).send('PAYTR notification failed: bad hash');
     }
 
-    const orderIdRaw = merchant_oid.replace(/\D/g, '');
-    const orderId = orderIdRaw ? parseInt(orderIdRaw) : null;
+    const orderId = parseInt(merchant_oid);
 
     if (!orderId) {
-       return res.status(200).send('OK');
+      return res.status(200).send('OK');
     }
 
-    // Payment kaydını bul ve güncelle
-    const payment = await prisma.payment.findFirst({ where: { orderId: orderId } });
-
+    // ✅ BAŞARILI ÖDEME
     if (status === 'success') {
-      
-      if (payment) {
-        await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: 'SUCCESS', paidAt: new Date(), totalAmount: parseFloat(total_amount) / 100 }
-        });
-      }
+      console.log('✅ Ödeme başarılı, DB güncelleniyor:', orderId);
 
-      // 🔴 DÜZELTME 1: paidAt kaldırıldı, items eklendi
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: { 
           status: 'SIPARIS_ALINDI', 
-          paymentStatus: 'SUCCESS',
-          // paidAt: new Date()  <-- BU SİLİNDİ (Hata veriyordu)
+          paymentStatus: 'SUCCESS'
         },
         include: { 
-            user: true,
-            items: { include: { product: true } } // 🔴 DÜZELTME 2: Mail için bu ŞART
+          user: true,
+          items: { include: { product: true } }
         } 
       });
 
+      // Mail gönder
       try {
-          if (updatedOrder.user?.email) await sendOrderConfirmationEmail(updatedOrder, updatedOrder.user);
-      } catch (e) { console.error("Mail hatası:", e); }
+        if (updatedOrder.user?.email) {
+          await sendOrderConfirmationEmail(updatedOrder, updatedOrder.user);
+          console.log('📧 Onay maili gönderildi');
+        }
+      } catch (e) { 
+        console.error("Mail hatası:", e); 
+      }
 
-    } else {
+      console.log('✅ DB güncellendi - SUCCESS');
+    } 
+    // ❌ BAŞARISIZ ÖDEME
+    else {
+      console.log('❌ Ödeme başarısız, DB güncelleniyor:', orderId);
+
       await prisma.order.update({
         where: { id: orderId },
-        data: { status: 'ODEME_BASARISIZ', paymentStatus: 'FAILED' }
+        data: { 
+          status: 'ODEME_BASARISIZ', 
+          paymentStatus: 'FAILED' 
+        }
       });
-      if (payment) {
-        await prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
-      }
+
+      console.log('✅ DB güncellendi - FAILED');
     }
+
+    // ✅ PayTR'ye sadece OK dön (HTML yok!)
     res.status(200).send('OK');
+    
   } catch (error) {
-    console.error('Callback Error:', error);
+    console.error('❌ Callback Error:', error);
     res.status(500).send('Error');
   }
 };
 
-export const checkPaymentStatus = async (req, res) => res.status(200).json({ message: "OK" });
-export const testPayment = async (req, res) => res.status(200).json({ message: "OK" });
+// ✅ handlePaymentSuccess ve handlePaymentFail SİLİNDİ - ARTIK KULLANILMIYOR
+// Frontend polling ile durum kontrol ediyor
 
-// 4. BAŞARILI ÖDEME YÖNLENDİRMESİ (DÜZELTİLDİ - BUTON EKLENDİ)
-export const handlePaymentSuccess = (req, res) => {
-  const body = req.body || {};
-  const query = req.query || {};
-  const merchant_oid = body.merchant_oid || query.merchant_oid || '';
-
-  const htmlContent = `
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          body { font-family: sans-serif; text-align: center; padding: 20px; }
-          .btn { background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin-top: 20px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <h3>Ödeme Başarılı!</h3>
-        <p>Siparişiniz onaylandı. Yönlendiriliyorsunuz...</p>
-        
-        <script>
-          setTimeout(function() {
-            try {
-              window.parent.postMessage(JSON.stringify({ 
-                status: 'success', 
-                merchant_oid: "${merchant_oid}" 
-              }), '*');
-            } catch(e) { console.log(e); }
-          }, 500);
-        </script>
-
-        <p style="margin-top:20px; font-size:14px; color:#666;">
-          Eğer sayfa değişmezse lütfen aşağıdaki butona tıklayın:
-        </p>
-        <a href="https://bigbosstextil.com/payment-success?merchant_oid=${merchant_oid}" target="_top" class="btn">
-          Siparişi Tamamla
-        </a>
-      </body>
-    </html>
-  `;
-  res.send(htmlContent);
-};
-
-// 5. BAŞARISIZ ÖDEME YÖNLENDİRMESİ (DÜZELTİLDİ - BUTON EKLENDİ)
-export const handlePaymentFail = (req, res) => {
-  const body = req.body || {};
-  const query = req.query || {};
-  const reason = body.failed_reason_msg || query.failed_reason_msg || 'İşlem başarısız';
-  const merchant_oid = body.merchant_oid || query.merchant_oid || '';
-
-  const htmlContent = `
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          body { font-family: sans-serif; text-align: center; padding: 20px; }
-          .btn { background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin-top: 20px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <h3 style="color:#dc2626;">Ödeme Başarısız</h3>
-        <p>${reason}</p>
-        
-        <script>
-          setTimeout(function() {
-            try {
-              window.parent.postMessage(JSON.stringify({ 
-                status: 'failed', 
-                reason: "${reason}",
-                merchant_oid: "${merchant_oid}"
-              }), '*');
-            } catch(e) { console.log(e); }
-          }, 500);
-        </script>
-
-        <p style="margin-top:20px; font-size:14px; color:#666;">
-          Sayfa değişmezse butona tıklayın:
-        </p>
-        <a href="https://bigbosstextil.com/payment-failed?reason=${encodeURIComponent(reason)}" target="_top" class="btn">
-          Geri Dön
-        </a>
-      </body>
-    </html>
-  `;
-  res.send(htmlContent);
+export default {
+  createPaymentToken,
+  paytrCallback
 };

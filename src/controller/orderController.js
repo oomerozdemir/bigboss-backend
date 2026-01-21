@@ -1,3 +1,4 @@
+// controller/orderController.js - POLLING METHOD ADDED
 
 import { PrismaClient } from '@prisma/client';
 import {
@@ -10,7 +11,6 @@ import {
 const prisma = new PrismaClient();
 
 export const createOrder = async (req, res) => {
-  // Kullanıcı giriş yapmışsa ID'yi al
   const userId = req.user ? req.user.id : null;
   
   const { 
@@ -38,7 +38,6 @@ export const createOrder = async (req, res) => {
             variantSize = item.variant.split('/')[0].trim();
         }
 
-        // Varyant kontrolü
         const productVariant = await prisma.productVariant.findFirst({
             where: { productId: item.productId, size: variantSize }
         });
@@ -51,7 +50,6 @@ export const createOrder = async (req, res) => {
             });
         }
         
-        // Ana ürün stoğunu düş
         await prisma.product.update({
             where: { id: item.productId },
             data: { stock: { decrement: item.quantity } }
@@ -120,8 +118,8 @@ export const createOrder = async (req, res) => {
     res.status(500).json({ error: "Sipariş oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin." });
   }
 };
+
 // --- SİPARİŞLERİMİ GETİR ---
-// Sadece ödemesi tamamlanmış veya aktif siparişleri getir
 export const getMyOrders = async (req, res) => {
   try {
     const orders = await prisma.order.findMany({
@@ -238,6 +236,44 @@ export const updatePaymentStatus = async (req, res) => {
   }
 };
 
+// ✅ YENİ: ÖDEME DURUMU KONTROLÜ (POLLING İÇİN)
+export const checkOrderPaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(orderId) },
+      select: {
+        id: true,
+        paymentStatus: true,
+        status: true,
+        userId: true
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı' });
+    }
+
+    // Kullanıcının kendi siparişi mi kontrol et
+    if (order.userId !== userId) {
+      return res.status(403).json({ error: 'Bu siparişi görme yetkiniz yok' });
+    }
+
+    // Sadece durum bilgisi dön
+    res.json({
+      orderId: order.id,
+      paymentStatus: order.paymentStatus,
+      orderStatus: order.status
+    });
+
+  } catch (error) {
+    console.error('Order status check error:', error);
+    res.status(500).json({ error: 'Durum kontrol edilemedi' });
+  }
+};
+
 export const getInvoiceDetails = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -270,7 +306,6 @@ export const getInvoiceDetails = async (req, res) => {
       return res.status(404).json({ error: "Sipariş bulunamadı" });
     }
 
-    // Kullanıcı sadece kendi siparişlerini görebilir
     if (!isAdmin && order.userId !== userId) {
       return res.status(403).json({ error: "Bu siparişi görme yetkiniz yok" });
     }
