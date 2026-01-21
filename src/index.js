@@ -36,7 +36,7 @@ app.use(cors({
 
 // 🟢 2. ADIM: DİĞER TEMEL AYARLAR
 app.set('trust proxy', 1); 
-app.use(helmet({
+/* app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
@@ -47,7 +47,8 @@ app.use(helmet({
     },
   },
   crossOriginResourcePolicy: false,
-}));
+})); */
+
 app.use(express.urlencoded({ extended: true })); 
 app.use(json({ limit: '10kb' })); 
 app.use(hpp());
