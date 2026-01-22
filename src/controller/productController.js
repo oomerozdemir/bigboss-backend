@@ -86,6 +86,10 @@ export const getAllProducts = async (req, res) => {
 // --- TEK BİR ÜRÜNÜ GETİR ---
 export const getProductById = async (req, res) => {
   const { id } = req.params;
+
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ error: "Geçersiz Ürün ID" });
+  }
   try {
     const product = await prisma.product.findUnique({
       where: { id: parseInt(id) },

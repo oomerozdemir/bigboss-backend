@@ -27,11 +27,11 @@ app.use(cors({
     "https://bigboss-frontend.vercel.app", 
     "http://localhost:5000",
     "https://bigbosstextil.com",
-    "https://www.bigbosstextil.com" // Bunu da ekledik, garanti olsun
+    "https://www.bigbosstextil.com"
   ],
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // İzin verilen metodlar
-  allowedHeaders: ["Content-Type", "Authorization"] // İzin verilen başlıklar
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+  allowedHeaders: ["Content-Type", "Authorization"] 
 }));
 
 // 🟢 2. ADIM: DİĞER TEMEL AYARLAR

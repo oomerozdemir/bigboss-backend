@@ -9,25 +9,20 @@ export const protect = (req, res, next) => {
   ) {
     try {
       token = req.headers.authorization.split(' ')[1];
-
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
       req.user = decoded;
-      
-      next(); // Devam et
+      return next(); // ✅ RETURN EKLENDİ (Fonksiyon burada biter, aşağı inmez)
 
     } catch (error) {
       console.error(error);
-      res.status(401).json({ error: "Yetkisiz işlem, token geçersiz." });
+      return res.status(401).json({ error: "Yetkisiz işlem, token geçersiz." }); // ✅ RETURN EKLENDİ
     }
   }
 
   if (!token) {
-    res.status(401).json({ error: "Giriş yapmalısınız." });
+    return res.status(401).json({ error: "Giriş yapmalısınız." }); // ✅ RETURN EKLENDİ
   }
 };
-
-
 
 export const protectAdmin = (req, res, next) => {
   let token;
@@ -45,15 +40,15 @@ export const protectAdmin = (req, res, next) => {
       }
 
       req.user = decoded;
-      next();
+      return next(); // ✅ RETURN EKLENDİ
 
     } catch (error) {
       console.error(error);
-      res.status(401).json({ error: "Geçersiz token." });
+      return res.status(401).json({ error: "Geçersiz token." }); // ✅ RETURN EKLENDİ
     }
   }
 
   if (!token) {
-    res.status(401).json({ error: "Token bulunamadı." });
+    return res.status(401).json({ error: "Token bulunamadı." }); // ✅ RETURN EKLENDİ
   }
 };
