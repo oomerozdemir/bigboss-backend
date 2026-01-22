@@ -1,4 +1,4 @@
-// controller/paytrController.js - SIMPLIFIED (NO SUCCESS/FAIL HANDLERS)
+// controller/paytrController.js - FIXED TO HANDLE GET AND POST
 
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
@@ -48,7 +48,7 @@ export const createPaymentToken = async (req, res) => {
     params.append('user_address', user_address);
     params.append('user_phone', user_phone);
     
-    // ✅ Sadece callback URL - success/fail URL'leri KALDIRILDI
+    // ✅ Callback URL
     params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/callback`);
     params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/callback`);
     
@@ -80,12 +80,31 @@ export const createPaymentToken = async (req, res) => {
   }
 };
 
-// 2. CALLBACK (SADECE DB GÜNCELLEMESİ - HTML DÖNMÜYOR)
+// 2. CALLBACK (HEM GET HEM POST DESTEĞİ)
 export const paytrCallback = async (req, res) => {
   try {
-    const { merchant_oid, status, total_amount, hash } = req.body;
+    // ✅ GET veya POST - her ikisini de destekle
+    const params = req.method === 'GET' ? req.query : req.body;
+    const { merchant_oid, status, total_amount, hash } = params;
     
-    console.log('📨 PayTR Callback alındı:', { merchant_oid, status });
+    console.log('📨 PayTR Callback alındı:', { 
+      method: req.method,
+      merchant_oid, 
+      status 
+    });
+
+    // GET isteği ise basit HTML dön (tarayıcıdan test için)
+    if (req.method === 'GET' && !merchant_oid) {
+      return res.send(`
+        <html>
+          <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+            <h2>✅ PayTR Callback Endpoint</h2>
+            <p>Bu endpoint PayTR'den gelen bildirimleri işler.</p>
+            <p>Direkt tarayıcıdan erişilemez.</p>
+          </body>
+        </html>
+      `);
+    }
 
     // Hash doğrula
     const hashSTR = merchant_oid + PAYTR_CONFIG.merchant_salt + status + total_amount;
@@ -145,7 +164,7 @@ export const paytrCallback = async (req, res) => {
       console.log('✅ DB güncellendi - FAILED');
     }
 
-    // ✅ PayTR'ye sadece OK dön (HTML yok!)
+    // ✅ PayTR'ye OK dön
     res.status(200).send('OK');
     
   } catch (error) {
@@ -153,9 +172,6 @@ export const paytrCallback = async (req, res) => {
     res.status(500).send('Error');
   }
 };
-
-// ✅ handlePaymentSuccess ve handlePaymentFail SİLİNDİ - ARTIK KULLANILMIYOR
-// Frontend polling ile durum kontrol ediyor
 
 export default {
   createPaymentToken,
