@@ -22,7 +22,6 @@ export const createPaymentToken = async (req, res) => {
       merchant_oid, payment_amount, user_ip 
     } = req.body;
 
-    console.log("📤 PayTR Token İsteği:", merchant_oid);
 
     const BACKEND_URL = process.env.BACKEND_URL || "https://bigboss-backend.onrender.com";
 
@@ -64,13 +63,11 @@ export const createPaymentToken = async (req, res) => {
     const result = await response.json();
 
     if (result.status === 'success') {
-      console.log('✅ PayTR token alındı');
       res.json({ 
         success: true, 
         iframe_url: `${PAYTR_CONFIG.iframe_base_url}${result.token}` 
       });
     } else {
-      console.error("❌ PayTR Token Hatası:", result.reason);
       res.status(400).json({ success: false, message: result.reason });
     }
 
@@ -87,12 +84,7 @@ export const paytrCallback = async (req, res) => {
     const params = req.method === 'GET' ? req.query : req.body;
     const { merchant_oid, status, total_amount, hash } = params;
     
-    console.log('📨 PayTR Callback alındı:', { 
-      method: req.method,
-      merchant_oid, 
-      status 
-    });
-
+   
     // GET isteği ise basit HTML dön (tarayıcıdan test için)
     if (req.method === 'GET' && !merchant_oid) {
       return res.send(`
@@ -123,7 +115,6 @@ export const paytrCallback = async (req, res) => {
 
     // ✅ BAŞARILI ÖDEME
     if (status === 'success') {
-      console.log('✅ Ödeme başarılı, DB güncelleniyor:', orderId);
 
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
@@ -151,7 +142,7 @@ export const paytrCallback = async (req, res) => {
     } 
     // ❌ BAŞARISIZ ÖDEME
     else {
-      console.log('❌ Ödeme başarısız, DB güncelleniyor:', orderId);
+      console.log('❌ Ödeme başarısız, DB güncelleniyor:');
 
       await prisma.order.update({
         where: { id: orderId },
@@ -161,14 +152,12 @@ export const paytrCallback = async (req, res) => {
         }
       });
 
-      console.log('✅ DB güncellendi - FAILED');
     }
 
     // ✅ PayTR'ye OK dön
     res.status(200).send('OK');
     
   } catch (error) {
-    console.error('❌ Callback Error:', error);
     res.status(500).send('Error');
   }
 };
@@ -176,8 +165,7 @@ export const handleSuccessRedirect = async (req, res) => {
   // Gelen veriyi (POST veya GET) al
   const params = req.method === 'GET' ? req.query : req.body;
   
-  // 🔍 LOG EKLEYELİM: PayTR'den ne geliyor görelim
-  console.log("➡️ PayTR Success Redirect Geldi:", params);
+
 
   const { merchant_oid } = params;
   
@@ -227,7 +215,6 @@ export const getOrderStatus = async (req, res) => {
       res.status(404).json({ success: false, message: "Sipariş bulunamadı" });
     }
   } catch (error) {
-    console.error("Sipariş getirme hatası:", error);
     res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };

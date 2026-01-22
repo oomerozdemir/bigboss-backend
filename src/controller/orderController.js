@@ -191,19 +191,19 @@ export const updateOrderStatus = async (req, res) => {
     switch (status) {
       case 'KARGOLANDI':
         sendOrderShippedEmail(order, order.user, trackingNumber)
-          .then(() => console.log(`📧 Kargo e-postası gönderildi: #${order.id}`))
+          .then(() => console.log(`📧 Kargo e-postası gönderildi:`))
           .catch(err => console.error('Kargo e-postası hatası:', err));
         break;
 
       case 'TESLIM_EDILDI':
         sendOrderDeliveredEmail(order, order.user)
-          .then(() => console.log(`📧 Teslimat e-postası gönderildi: #${order.id}`))
+          .then(() => console.log(`📧 Teslimat e-postası gönderildi:`))
           .catch(err => console.error('Teslimat e-postası hatası:', err));
         break;
 
       case 'IPTAL_EDILDI':
         sendOrderCancelledEmail(order, order.user, 'Admin tarafından iptal edildi')
-          .then(() => console.log(`📧 İptal e-postası gönderildi: #${order.id}`))
+          .then(() => console.log(`📧 İptal e-postası gönderildi:`))
           .catch(err => console.error('İptal e-postası hatası:', err));
         break;
 
