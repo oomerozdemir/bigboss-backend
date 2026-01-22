@@ -173,14 +173,22 @@ export const paytrCallback = async (req, res) => {
   }
 };
 export const handleSuccessRedirect = async (req, res) => {
-  // ✅ DÜZELTME: Hem POST (body) hem GET (query) desteği
+  // Gelen veriyi (POST veya GET) al
   const params = req.method === 'GET' ? req.query : req.body;
+  
+  // 🔍 LOG EKLEYELİM: PayTR'den ne geliyor görelim
+  console.log("➡️ PayTR Success Redirect Geldi:", params);
+
   const { merchant_oid } = params;
   
-  const FRONTEND_URL = process.env.FRONTEND_URL;
+  const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173"; // Canlı domaininiz olmalı
 
-  // merchant_oid yoksa bile sayfaya gitsin, frontend orada yönetir
-  return res.redirect(`${FRONTEND_URL}/payment-success${merchant_oid ? `?merchant_oid=${merchant_oid}` : ''}`);
+  // Eğer merchant_oid varsa URL'e ekle, yoksa boş gönder
+  const redirectUrl = merchant_oid 
+    ? `${FRONTEND_URL}/payment-success?merchant_oid=${merchant_oid}`
+    : `${FRONTEND_URL}/payment-success`;
+
+  return res.redirect(redirectUrl);
 };
 
 // 4. BAŞARISIZ ÖDEME YÖNLENDİRMESİ
