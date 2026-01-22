@@ -369,15 +369,45 @@ export const bulkUpdateProducts = async (req, res) => {
 
 export const getBulkProducts = async (req, res) => {
   try {
-    console.log("Admin toplu ürün listesi istiyor...");
+    // Varsayılan limit 500, sayfa 1
+    const { page = 1, limit = 500, search = "" } = req.query;
     
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    console.log(`Admin toplu liste: Sayfa ${pageNum}, Limit ${limitNum}, Arama: ${search}`);
+
+    // Arama Filtresi (Hem İsim Hem ID)
+    const whereClause = search ? {
+        OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            // Eğer aranan şey bir sayıysa ID'ye de bak
+            ...((!isNaN(search) && search.trim() !== "") ? [{ id: parseInt(search) }] : [])
+        ]
+    } : {};
+
+    // 1. Toplam sayıyı bul (Pagination hesaplaması için)
+    const totalCount = await prisma.product.count({ where: whereClause });
+
+    // 2. Sayfalanmış veriyi çek
     const products = await prisma.product.findMany({
-      orderBy: { id: 'desc' }, // En yeni eklenen en üstte
-      // Filtre (where) YOK, Limit (take) YOK -> Hepsi gelir.
+      where: whereClause,
+      orderBy: { id: 'desc' }, // En yeni en üstte
+      skip: skip,
+      take: limitNum
     });
     
-    console.log(`✅ Toplam ${products.length} ürün bulundu.`);
-    res.json({ success: true, products });
+    res.json({ 
+        success: true, 
+        products,
+        meta: {
+            totalCount,
+            totalPages: Math.ceil(totalCount / limitNum),
+            currentPage: pageNum,
+            limit: limitNum
+        }
+    });
   } catch (error) {
     console.error("❌ Bulk Get Error:", error);
     res.status(500).json({ success: false, message: "Ürünler alınamadı: " + error.message });
