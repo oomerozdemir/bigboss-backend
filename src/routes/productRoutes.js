@@ -21,10 +21,10 @@ router.post('/bulk-delete', protectAdmin, deleteProductsBulk);
 router.post('/bulk-category', protectAdmin, addProductsToCategoryBulk);
 router.patch('/:id/status', protectAdmin, updateProductStatus);
 
-router.get('/bulk-list', protect, admin, getBulkProducts);
+router.get('/bulk-list', protect, protectAdmin, getBulkProducts);
 
 // ✅ Toplu Güncelleme Rotası (Zaten vardı)
-router.post('/bulk-update', protect, admin, bulkUpdateProducts);
+router.post('/bulk-update', protect, protectAdmin, bulkUpdateProducts);
 
 
 export default router;
