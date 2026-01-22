@@ -362,3 +362,20 @@ export const bulkUpdateProducts = async (req, res) => {
     res.status(500).json({ success: false, message: "Sunucu hatası: " + error.message });
   }
 };
+
+export const getBulkProducts = async (req, res) => {
+  try {
+    console.log("Admin toplu ürün listesi istiyor...");
+    
+    const products = await prisma.product.findMany({
+      orderBy: { id: 'desc' }, // En yeni eklenen en üstte
+      // Filtre (where) YOK, Limit (take) YOK -> Hepsi gelir.
+    });
+    
+    console.log(`✅ Toplam ${products.length} ürün bulundu.`);
+    res.json({ success: true, products });
+  } catch (error) {
+    console.error("❌ Bulk Get Error:", error);
+    res.status(500).json({ success: false, message: "Ürünler alınamadı: " + error.message });
+  }
+};
