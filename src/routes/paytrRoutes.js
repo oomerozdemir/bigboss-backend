@@ -15,9 +15,10 @@ router.post('/create-payment', protect, createPaymentToken);
 router.post('/callback', paytrCallback);
 router.get('/callback', paytrCallback); // ✅ GET eklendi
 
-// Kullanıcı Yönlendirmeleri (Bridge Rotaları)
 router.post('/success-redirect', handleSuccessRedirect);
+router.get('/success-redirect', handleSuccessRedirect); 
 router.post('/fail-redirect', handleFailRedirect);
+router.get('/fail-redirect', handleFailRedirect);
 
 // Sipariş Durumu Sorgulama (Frontend için)
 router.get('/status/:orderId', getOrderStatus);

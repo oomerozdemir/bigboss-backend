@@ -172,21 +172,26 @@ export const paytrCallback = async (req, res) => {
     res.status(500).send('Error');
   }
 };
-
 export const handleSuccessRedirect = async (req, res) => {
-  const { merchant_oid } = req.body;
+  // ✅ DÜZELTME: Hem POST (body) hem GET (query) desteği
+  const params = req.method === 'GET' ? req.query : req.body;
+  const { merchant_oid } = params;
   
-  const FRONTEND_URL = process.env.FRONTEND_URL || "https://bigb"; 
-  // Kullanıcıyı frontend'e taşıyoruz
-  return res.redirect(`${FRONTEND_URL}/payment-success?merchant_oid=${merchant_oid}`);
+  const FRONTEND_URL = process.env.FRONTEND_URL;
+
+  // merchant_oid yoksa bile sayfaya gitsin, frontend orada yönetir
+  return res.redirect(`${FRONTEND_URL}/payment-success${merchant_oid ? `?merchant_oid=${merchant_oid}` : ''}`);
 };
 
 // 4. BAŞARISIZ ÖDEME YÖNLENDİRMESİ
 export const handleFailRedirect = async (req, res) => {
-  const { merchant_oid, fail_message } = req.body;
-  const FRONTEND_URL = process.env.FRONTEND_URL || "https://bigbosstextil.com";
+  // ✅ DÜZELTME: Hem POST (body) hem GET (query) desteği
+  const params = req.method === 'GET' ? req.query : req.body;
+  const { merchant_oid, fail_message } = params;
+  
+  const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-  return res.redirect(`${FRONTEND_URL}/payment-failed?merchant_oid=${merchant_oid}&reason=${encodeURIComponent(fail_message)}`);
+  return res.redirect(`${FRONTEND_URL}/payment-failed?merchant_oid=${merchant_oid || ''}&reason=${encodeURIComponent(fail_message || 'İşlem Başarısız')}`);
 };
 
 // 5. SİPARİŞ DURUM SORGULAMA (Frontend PaymentSuccess.jsx bunu çağırıyor)
