@@ -52,7 +52,7 @@ app.use(helmet({
 }));
 
 app.use(express.urlencoded({ extended: true })); 
-app.use(json({ limit: '10kb' })); 
+app.use(json({ limit: '10mb' }));
 app.use(hpp());
 
 // 🟢 3. ADIM: PAYTR ROTASI (Rate Limit'e takılmaması için önce tanımlıyoruz)
