@@ -142,7 +142,6 @@ export const paytrCallback = async (req, res) => {
     } 
     // ❌ BAŞARISIZ ÖDEME
     else {
-      console.log('❌ Ödeme başarısız, DB güncelleniyor:');
 
       await prisma.order.update({
         where: { id: orderId },

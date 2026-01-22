@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getAllProducts, createProduct, deleteProduct, updateProduct, getProductById,
-    deleteProductsBulk, addProductsToCategoryBulk, updateProductStatus
+    deleteProductsBulk, addProductsToCategoryBulk, updateProductStatus, bulkUpdateProducts
  } from '../controller/productController.js'; 
 import { protectAdmin } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
@@ -15,6 +15,7 @@ router.put('/:id', protectAdmin, upload.any(), updateProduct);
 
 router.delete('/:id', protectAdmin, deleteProduct);
 
+router.post('/bulk-update', protect, admin, bulkUpdateProducts);
 
 router.post('/bulk-delete', protectAdmin, deleteProductsBulk);
 router.post('/bulk-category', protectAdmin, addProductsToCategoryBulk);

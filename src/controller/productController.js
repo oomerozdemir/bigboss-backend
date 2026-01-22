@@ -330,3 +330,35 @@ export const updateProductStatus = async (req, res) => {
         res.status(500).json({ error: "Durum güncellenemedi." });
     }
 };
+
+
+
+export const bulkUpdateProducts = async (req, res) => {
+  try {
+    const { updates } = req.body; // updates: [{ id: 1, price: 100, stock: 5 }, ...]
+
+    if (!updates || !Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ success: false, message: "Güncellenecek veri bulunamadı." });
+    }
+
+    console.log(`🔄 ${updates.length} adet ürün için toplu güncelleme başlatılıyor...`);
+
+    // Transaction kullanarak hepsini tek seferde işle
+    const results = await prisma.$transaction(
+      updates.map((product) => {
+        const { id, ...data } = product;
+        return prisma.product.update({
+          where: { id: parseInt(id) }, // ID'nin sayı olduğundan emin oluyoruz
+          data: data
+        });
+      })
+    );
+
+    console.log("✅ Toplu güncelleme başarılı.");
+    res.json({ success: true, message: `${results.length} ürün başarıyla güncellendi.` });
+
+  } catch (error) {
+    console.error("❌ Toplu güncelleme hatası:", error);
+    res.status(500).json({ success: false, message: "Sunucu hatası: " + error.message });
+  }
+};
