@@ -35,19 +35,21 @@ app.use(cors({
 }));
 
 // 🟢 2. ADIM: DİĞER TEMEL AYARLAR
-app.set('trust proxy', 1); 
-/* app.use(helmet({
+app.use(helmet({
   contentSecurityPolicy: {
-    useDefaults: true,
     directives: {
-      "script-src": ["'self'", "'unsafe-inline'", "https://www.paytr.com"],
-      "frame-src": ["'self'", "https://www.paytr.com"],
-      "connect-src": ["'self'", "https://www.paytr.com", "https://bigboss-backend.onrender.com"],
-      "img-src": ["'self'", "data:", "https:"],
-    },
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.paytr.com"],
+      frameSrc: ["'self'", "https://www.paytr.com"],  // ✅ iframe için
+      connectSrc: ["'self'", "https://www.paytr.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", "data:", "https:"]
+    }
   },
-  crossOriginResourcePolicy: false,
-})); */
+  crossOriginEmbedderPolicy: false,  // ✅ iframe için gerekli
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 app.use(express.urlencoded({ extended: true })); 
 app.use(json({ limit: '10kb' })); 

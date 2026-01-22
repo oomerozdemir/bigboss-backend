@@ -49,8 +49,8 @@ export const createPaymentToken = async (req, res) => {
     params.append('user_phone', user_phone);
     
     // ✅ Callback URL
-    params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/callback`);
-    params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/callback`);
+    params.append('merchant_ok_url', `${BACKEND_URL}/api/paytr/success-redirect`);
+    params.append('merchant_fail_url', `${BACKEND_URL}/api/paytr/fail-redirect`);
     
     params.append('timeout_limit', '30');
     params.append('currency', currency);
@@ -172,6 +172,54 @@ export const paytrCallback = async (req, res) => {
     res.status(500).send('Error');
   }
 };
+
+export const handleSuccessRedirect = async (req, res) => {
+  const { merchant_oid } = req.body;
+  
+  const FRONTEND_URL = process.env.FRONTEND_URL || "https://bigb"; 
+  // Kullanıcıyı frontend'e taşıyoruz
+  return res.redirect(`${FRONTEND_URL}/payment-success?merchant_oid=${merchant_oid}`);
+};
+
+// 4. BAŞARISIZ ÖDEME YÖNLENDİRMESİ
+export const handleFailRedirect = async (req, res) => {
+  const { merchant_oid, fail_message } = req.body;
+  const FRONTEND_URL = process.env.FRONTEND_URL || "https://bigbosstextil.com";
+
+  return res.redirect(`${FRONTEND_URL}/payment-failed?merchant_oid=${merchant_oid}&reason=${encodeURIComponent(fail_message)}`);
+};
+
+// 5. SİPARİŞ DURUM SORGULAMA (Frontend PaymentSuccess.jsx bunu çağırıyor)
+export const getOrderStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Not: orderId'niz DB'de int ise parseInt kullanın
+    const order = await prisma.order.findFirst({
+      where: { id: parseInt(orderId) },
+      include: { user: true }
+    });
+
+    if (order) {
+      res.json({
+        success: true,
+        payment: {
+          orderId: order.id,
+          amount: order.totalAmount, // Prisma modelinize göre bu alan adını kontrol edin (örn: price, total vb.)
+          paidAt: order.updatedAt,
+          status: order.paymentStatus
+        }
+      });
+    } else {
+      res.status(404).json({ success: false, message: "Sipariş bulunamadı" });
+    }
+  } catch (error) {
+    console.error("Sipariş getirme hatası:", error);
+    res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+
 
 export default {
   createPaymentToken,
