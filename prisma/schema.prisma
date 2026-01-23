@@ -38,18 +38,42 @@ model Product {
   name        String
   description String?
   price       Decimal  @db.Decimal(10, 2)
+  
+  // ✅ YENİ: İNDİRİM SİSTEMİ
+  discountPrice Decimal? @db.Decimal(10, 2) // İndirimli fiyat (varsa)
+  isOnSale      Boolean  @default(false)     // İndirimde mi?
+  
   stock       Int      @default(0)
   imageUrl    String?  
   isFeatured  Boolean  @default(false)
   
   categories  SubCategory[] 
 
+  // ✅ YENİ: DETAYLI BİLGİLER
+  productDetails ProductDetail[]
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   variants    ProductVariant[]
   favoritedBy Favorite[]
   orderItems  OrderItem[]
   isActive    Boolean  @default(true)
+}
+
+model ProductDetail {
+  id          Int     @id @default(autoincrement())
+  productId   Int
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  sectionType String  // "DESCRIPTION", "FEATURES", "SPECIFICATIONS", "CARE"
+  title       String? // Bölüm başlığı (opsiyonel)
+  content     String  @db.Text // Detay içeriği
+  order       Int     @default(0) // Sıralama
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([productId])
 }
 
 model ProductVariant {

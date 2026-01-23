@@ -1,4 +1,4 @@
-// src/controller/productController.js - PAGİNATİON DÜZELTİLMİŞ
+// src/controller/productController.js - İNDİRİM VE DETAYLAR EKLENDİ
 
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
@@ -27,21 +27,19 @@ const uploadToCloudinary = async (filePath) => {
     throw error;
   }
 };
+
 // --- TÜM ÜRÜNLERİ GETİR---
 export const getAllProducts = async (req, res) => {
   try {
-    // 1. Query Parametrelerine 'isFeatured' eklendi
     const { isAdmin, page = 1, limit = 20, search = "", isFeatured } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // 2. Filtreleri Oluştur
     const whereClause = {
         AND: [
-            isAdmin === 'true' ? {} : { isActive: true }, // Admin değilse sadece aktifleri göster
-            // YENİ: Eğer isFeatured=true gönderilirse sadece öne çıkanları filtrele
+            isAdmin === 'true' ? {} : { isActive: true },
             isFeatured === 'true' ? { isFeatured: true } : {}, 
             search ? {
                 OR: [
@@ -52,22 +50,20 @@ export const getAllProducts = async (req, res) => {
         ]
     };
 
-    // 3. Toplam Kayıt Sayısını Bul
     const totalCount = await prisma.product.count({ where: whereClause });
 
-    // 4. Verileri Çek
     const products = await prisma.product.findMany({
       where: whereClause,
       include: {
         categories: { include: { mainCategory: true } },
-        variants: true
+        variants: true,
+        productDetails: true // ✅ YENİ
       },
       orderBy: { createdAt: 'desc' },
       skip: skip,
       take: limitNum
     });
 
-    // 5. Yanıt Dön
     res.json({
         products,
         meta: {
@@ -100,7 +96,10 @@ export const getProductById = async (req, res) => {
             mainCategory: true
           }
         },
-        variants: true
+        variants: true,
+        productDetails: { // ✅ YENİ
+          orderBy: { order: 'asc' }
+        }
       }
     });
     if (!product) return res.status(404).json({ error: "Ürün bulunamadı." });
@@ -111,27 +110,29 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// --- YENİ ÜRÜN EKLE (Admin) ---
-// --- YENİ ÜRÜN EKLE (HIZLANDIRILMIŞ VERSİYON) ---
+// --- YENİ ÜRÜN EKLE ---
 export const createProduct = async (req, res) => {
   try {
-    const { name, description, price, isFeatured, categoryIds, variants } = req.body;
+    const { 
+      name, description, price, 
+      discountPrice, isOnSale, // ✅ YENİ
+      isFeatured, categoryIds, variants,
+      productDetails // ✅ YENİ
+    } = req.body;
     
-    // JSON parse işlemleri
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
+    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : []; // ✅ YENİ
 
-    // 1. ANA RESİM YÜKLEME İŞLEMİNİ BAŞLAT (Ama await ile bekleme, promise oluştur)
+    // Ana resim
     const mainFile = req.files?.find(f => f.fieldname === 'image');
     const mainImagePromise = mainFile 
       ? uploadToCloudinary(mainFile.path) 
-      : Promise.resolve(""); // Resim yoksa hemen boş dön
+      : Promise.resolve("");
 
-    // 2. VARYANT RESİMLERİNİ HAZIRLA (Bunları da promise olarak başlat)
+    // Varyant resimleri
     const variantPromises = parsedVariants.map(async (variant, index) => {
       const variantFile = req.files?.find(f => f.fieldname === `variantImage_${index}`);
-      
-      // Eğer resim varsa yükle, yoksa null dön
       const vUrl = variantFile ? await uploadToCloudinary(variantFile.path) : null;
 
       return {
@@ -142,22 +143,24 @@ export const createProduct = async (req, res) => {
       };
     });
 
-    // 3. HER ŞEYİ AYNI ANDA BEKLE (Paralel İşlem)
-    // Ana resim ve tüm varyantlar aynı anda sunucuya yüklenir. Süre yarı yarıya düşer.
     const [mainImageUrl, ...variantsWithImages] = await Promise.all([
       mainImagePromise, 
       ...variantPromises
     ]);
 
-    // 4. TOPLAM STOK HESAPLA
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
-    // 5. VERİTABANINA KAYDET
+    // ✅ İndirim alanları
+    const finalDiscountPrice = isOnSale === 'true' && discountPrice ? parseFloat(discountPrice) : null;
+    const finalIsOnSale = isOnSale === 'true';
+
     const newProduct = await prisma.product.create({
       data: {
         name,
         description,
         price: parseFloat(price),
+        discountPrice: finalDiscountPrice, // ✅ YENİ
+        isOnSale: finalIsOnSale,           // ✅ YENİ
         stock: totalStock,
         imageUrl: mainImageUrl,
         isFeatured: isFeatured === 'true',
@@ -166,16 +169,23 @@ export const createProduct = async (req, res) => {
         },
         variants: {
           create: variantsWithImages 
+        },
+        productDetails: { // ✅ YENİ
+          create: parsedDetails.map(detail => ({
+            sectionType: detail.sectionType,
+            title: detail.title || null,
+            content: detail.content,
+            order: detail.order || 0
+          }))
         }
       },
-      include: { variants: true, categories: true }
+      include: { variants: true, categories: true, productDetails: true }
     });
 
     res.status(201).json(newProduct);
 
   } catch (error) {
     console.error("createProduct Error:", error);
-    // Hata durumunda geçici dosyaları temizle
     if (req.files) {
         req.files.forEach(file => {
             if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -184,7 +194,8 @@ export const createProduct = async (req, res) => {
     res.status(500).json({ error: "Ürün eklenirken hata oluştu." });
   }
 };
-// --- ÜRÜN SİL (Admin) ---
+
+// --- ÜRÜN SİL ---
 export const deleteProduct = async (req, res) => {
   const { id } = req.params;
   try {
@@ -198,10 +209,15 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
-// --- ÜRÜN GÜNCELLE (Admin) ---
+// --- ÜRÜN GÜNCELLE ---
 export const updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { name, description, price, isFeatured, categoryIds, imageUrl, variants } = req.body;
+  const { 
+    name, description, price, 
+    discountPrice, isOnSale, // ✅ YENİ
+    isFeatured, categoryIds, imageUrl, variants,
+    productDetails // ✅ YENİ
+  } = req.body;
 
   try {
     let finalImageUrl = imageUrl; 
@@ -213,6 +229,7 @@ export const updateProduct = async (req, res) => {
 
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
+    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : []; // ✅ YENİ
 
     const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
         const variantFile = req.files?.find(f => f.fieldname === `variantImage_${index}`);
@@ -233,12 +250,18 @@ export const updateProduct = async (req, res) => {
 
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
+    // ✅ İndirim alanları
+    const finalDiscountPrice = isOnSale === 'true' && discountPrice ? parseFloat(discountPrice) : null;
+    const finalIsOnSale = isOnSale === 'true';
+
     const updatedProduct = await prisma.product.update({
       where: { id: parseInt(id) },
       data: {
         name,
         description,
         price: parseFloat(price),
+        discountPrice: finalDiscountPrice, // ✅ YENİ
+        isOnSale: finalIsOnSale,           // ✅ YENİ
         stock: totalStock,
         imageUrl: finalImageUrl,
         isFeatured: isFeatured === 'true',
@@ -247,9 +270,20 @@ export const updateProduct = async (req, res) => {
         variants: {
           deleteMany: {}, 
           create: variantsWithImages
+        },
+        
+        // ✅ YENİ: Detayları güncelle
+        productDetails: {
+          deleteMany: {}, // Önce tümünü sil
+          create: parsedDetails.map(detail => ({
+            sectionType: detail.sectionType,
+            title: detail.title || null,
+            content: detail.content,
+            order: detail.order || 0
+          }))
         }
       },
-      include: { variants: true }
+      include: { variants: true, productDetails: true }
     });
 
     res.json(updatedProduct);
@@ -325,7 +359,7 @@ export const addProductsToCategoryBulk = async (req, res) => {
     }
 };
 
-// --- DURUM GÜNCELLEME (GİZLE/GÖSTER) ---
+// --- DURUM GÜNCELLEME ---
 export const updateProductStatus = async (req, res) => {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -346,11 +380,9 @@ export const updateProductStatus = async (req, res) => {
     }
 };
 
-
-
 export const bulkUpdateProducts = async (req, res) => {
   try {
-    const { updates } = req.body; // updates: [{ id: 1, price: 100, stock: 5 }, ...]
+    const { updates } = req.body;
 
     if (!updates || !Array.isArray(updates) || updates.length === 0) {
       return res.status(400).json({ success: false, message: "Güncellenecek veri bulunamadı." });
@@ -358,12 +390,11 @@ export const bulkUpdateProducts = async (req, res) => {
 
     console.log(`🔄 ${updates.length} adet ürün için toplu güncelleme başlatılıyor...`);
 
-    // Transaction kullanarak hepsini tek seferde işle
     const results = await prisma.$transaction(
       updates.map((product) => {
         const { id, ...data } = product;
         return prisma.product.update({
-          where: { id: parseInt(id) }, // ID'nin sayı olduğundan emin oluyoruz
+          where: { id: parseInt(id) },
           data: data
         });
       })
@@ -380,7 +411,6 @@ export const bulkUpdateProducts = async (req, res) => {
 
 export const getBulkProducts = async (req, res) => {
   try {
-    // Varsayılan limit 500, sayfa 1
     const { page = 1, limit = 500, search = "" } = req.query;
     
     const pageNum = parseInt(page);
@@ -389,22 +419,18 @@ export const getBulkProducts = async (req, res) => {
 
     console.log(`Admin toplu liste: Sayfa ${pageNum}, Limit ${limitNum}, Arama: ${search}`);
 
-    // Arama Filtresi (Hem İsim Hem ID)
     const whereClause = search ? {
         OR: [
             { name: { contains: search, mode: 'insensitive' } },
-            // Eğer aranan şey bir sayıysa ID'ye de bak
             ...((!isNaN(search) && search.trim() !== "") ? [{ id: parseInt(search) }] : [])
         ]
     } : {};
 
-    // 1. Toplam sayıyı bul (Pagination hesaplaması için)
     const totalCount = await prisma.product.count({ where: whereClause });
 
-    // 2. Sayfalanmış veriyi çek
     const products = await prisma.product.findMany({
       where: whereClause,
-      orderBy: { id: 'desc' }, // En yeni en üstte
+      orderBy: { id: 'desc' },
       skip: skip,
       take: limitNum
     });
