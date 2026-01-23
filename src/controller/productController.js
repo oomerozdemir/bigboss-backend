@@ -16,7 +16,9 @@ cloudinary.config({
 const uploadToCloudinary = async (filePath) => {
   try {
     const result = await cloudinary.uploader.upload(filePath, {
-      folder: "bigboss_products"
+      folder: "bigboss_products",
+      format: 'webp',      
+      quality: 'auto'      
     });
     fs.unlinkSync(filePath);
     return result.secure_url;
@@ -25,7 +27,6 @@ const uploadToCloudinary = async (filePath) => {
     throw error;
   }
 };
-
 // --- TÜM ÜRÜNLERİ GETİR---
 export const getAllProducts = async (req, res) => {
   try {

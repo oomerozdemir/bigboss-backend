@@ -14,7 +14,6 @@ const storage = multer.diskStorage({
     cb(null, uploadPath); 
   },
   filename: function (req, file, cb) {
-    // Dosya ismini benzersiz yap
     cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname));
   }
 });
@@ -28,10 +27,9 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Max 5MB
+  limits: { fileSize: 15 * 1024 * 1024 }, // ✅ LİMİT ARTIRILDI: Max 15MB (Eskisi 5MB idi)
   fileFilter: fileFilter
 });
 
