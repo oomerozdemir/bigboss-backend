@@ -112,27 +112,27 @@ export const getProductById = async (req, res) => {
 };
 
 // --- YENİ ÜRÜN EKLE (Admin) ---
+// --- YENİ ÜRÜN EKLE (HIZLANDIRILMIŞ VERSİYON) ---
 export const createProduct = async (req, res) => {
   try {
-    let mainImageUrl = "";
-    const mainFile = req.files?.find(f => f.fieldname === 'image');
-    
-    if (mainFile) {
-      mainImageUrl = await uploadToCloudinary(mainFile.path);
-    }
-
     const { name, description, price, isFeatured, categoryIds, variants } = req.body;
     
+    // JSON parse işlemleri
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
 
-    const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
+    // 1. ANA RESİM YÜKLEME İŞLEMİNİ BAŞLAT (Ama await ile bekleme, promise oluştur)
+    const mainFile = req.files?.find(f => f.fieldname === 'image');
+    const mainImagePromise = mainFile 
+      ? uploadToCloudinary(mainFile.path) 
+      : Promise.resolve(""); // Resim yoksa hemen boş dön
+
+    // 2. VARYANT RESİMLERİNİ HAZIRLA (Bunları da promise olarak başlat)
+    const variantPromises = parsedVariants.map(async (variant, index) => {
       const variantFile = req.files?.find(f => f.fieldname === `variantImage_${index}`);
       
-      let vUrl = null;
-      if (variantFile) {
-        vUrl = await uploadToCloudinary(variantFile.path);
-      }
+      // Eğer resim varsa yükle, yoksa null dön
+      const vUrl = variantFile ? await uploadToCloudinary(variantFile.path) : null;
 
       return {
         size: variant.size,
@@ -140,10 +140,19 @@ export const createProduct = async (req, res) => {
         stock: parseInt(variant.stock) || 0,
         vImageUrl: vUrl
       };
-    }));
+    });
 
+    // 3. HER ŞEYİ AYNI ANDA BEKLE (Paralel İşlem)
+    // Ana resim ve tüm varyantlar aynı anda sunucuya yüklenir. Süre yarı yarıya düşer.
+    const [mainImageUrl, ...variantsWithImages] = await Promise.all([
+      mainImagePromise, 
+      ...variantPromises
+    ]);
+
+    // 4. TOPLAM STOK HESAPLA
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
+    // 5. VERİTABANINA KAYDET
     const newProduct = await prisma.product.create({
       data: {
         name,
@@ -163,8 +172,10 @@ export const createProduct = async (req, res) => {
     });
 
     res.status(201).json(newProduct);
+
   } catch (error) {
     console.error("createProduct Error:", error);
+    // Hata durumunda geçici dosyaları temizle
     if (req.files) {
         req.files.forEach(file => {
             if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -173,7 +184,6 @@ export const createProduct = async (req, res) => {
     res.status(500).json({ error: "Ürün eklenirken hata oluştu." });
   }
 };
-
 // --- ÜRÜN SİL (Admin) ---
 export const deleteProduct = async (req, res) => {
   const { id } = req.params;
