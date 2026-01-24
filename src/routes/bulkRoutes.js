@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { exportProductsCsv, bulkImportProducts } from '../controller/bulkController.js';
-import { protect, protectAdmin } from '../middleware/authMiddleware.js'; // İsimlendirmeye dikkat edin, authMiddleware dosyanızda 'admin' yerine 'protectAdmin' olabilir
-import upload from '../middleware/uploadMiddleware.js';
+import { protect, protectAdmin } from '../middleware/authMiddleware.js'; 
 
 const router = Router();
 
