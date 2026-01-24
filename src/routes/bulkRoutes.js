@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { exportProductsCsv, bulkImportProducts } from '../controller/bulkController.js';
 import { protect, protectAdmin } from '../middleware/authMiddleware.js'; 
+import upload from "../middleware/uploadMiddleware.js"
 
 const router = Router();
 
