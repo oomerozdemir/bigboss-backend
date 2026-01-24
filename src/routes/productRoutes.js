@@ -25,16 +25,19 @@ router.post('/bulk-update', protect, protectAdmin, bulkUpdateProducts);
 router.post('/bulk-delete', protect, protectAdmin, deleteProductsBulk);        
 router.post('/bulk-category', protect, protectAdmin, addProductsToCategoryBulk); 
 
-// ANA ÜRÜN OLUŞTURMA
+// ✅ ÜRÜN OLUŞTURMA - upload.any() kullan (varyant resimleri için)
 router.post('/', protect, protectAdmin, upload.any(), createProduct);
 
-
+// Detay
 router.get('/:id', getProductById);
-router.put('/:id', protect, protectAdmin, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'images', maxCount: 5 }]), updateProduct);
+
+// ✅ ÜRÜN GÜNCELLEME - upload.any() kullan (tutarlılık için)
+router.put('/:id', protect, protectAdmin, upload.any(), updateProduct);
+
+// Silme
 router.delete('/:id', protectAdmin, deleteProduct);
+
+// Durum Güncelleme
 router.patch('/:id/status', protectAdmin, updateProductStatus);
-
-
-
 
 export default router;

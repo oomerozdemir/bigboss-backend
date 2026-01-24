@@ -1,4 +1,4 @@
-// src/controller/productController.js - İNDİRİM VE DETAYLAR EKLENDİ
+// src/controller/productController.js - REQ.FILES HATASI DÜZELTİLDİ
 
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
@@ -11,6 +11,28 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+// ✅ YARDIMCI FONKSİYON: req.files'ı array'e çevir
+const getFilesArray = (files) => {
+  if (!files) return [];
+  if (Array.isArray(files)) return files;
+  // upload.fields() kullanıldığında obje gelir
+  return Object.values(files).flat();
+};
+
+// ✅ YARDIMCI FONKSİYON: Dosya temizliği
+const cleanupFiles = (files) => {
+  const filesArray = getFilesArray(files);
+  filesArray.forEach(file => {
+    if (file?.path && fs.existsSync(file.path)) {
+      try {
+        fs.unlinkSync(file.path);
+      } catch (err) {
+        console.error('Dosya silinemedi:', file.path, err);
+      }
+    }
+  });
+};
 
 // --- YARDIMCI FONKSİYON: Cloudinary Yükleme ---
 const uploadToCloudinary = async (filePath) => {
@@ -57,7 +79,7 @@ export const getAllProducts = async (req, res) => {
       include: {
         categories: { include: { mainCategory: true } },
         variants: true,
-        productDetails: true // ✅ YENİ
+        productDetails: true
       },
       orderBy: { createdAt: 'desc' },
       skip: skip,
@@ -97,7 +119,7 @@ export const getProductById = async (req, res) => {
           }
         },
         variants: true,
-        productDetails: { // ✅ YENİ
+        productDetails: {
           orderBy: { order: 'asc' }
         }
       }
@@ -115,24 +137,27 @@ export const createProduct = async (req, res) => {
   try {
     const { 
       name, description, price, 
-      discountPrice, isOnSale, // ✅ YENİ
+      discountPrice, isOnSale,
       isFeatured, categoryIds, variants,
-      productDetails // ✅ YENİ
+      productDetails
     } = req.body;
     
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
-    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : []; // ✅ YENİ
+    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : [];
+
+    // ✅ req.files'ı array'e çevir
+    const filesArray = getFilesArray(req.files);
 
     // Ana resim
-    const mainFile = req.files?.find(f => f.fieldname === 'image');
+    const mainFile = filesArray.find(f => f.fieldname === 'image');
     const mainImagePromise = mainFile 
       ? uploadToCloudinary(mainFile.path) 
       : Promise.resolve("");
 
     // Varyant resimleri
     const variantPromises = parsedVariants.map(async (variant, index) => {
-      const variantFile = req.files?.find(f => f.fieldname === `variantImage_${index}`);
+      const variantFile = filesArray.find(f => f.fieldname === `variantImage_${index}`);
       const vUrl = variantFile ? await uploadToCloudinary(variantFile.path) : null;
 
       return {
@@ -150,7 +175,6 @@ export const createProduct = async (req, res) => {
 
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
-    // ✅ İndirim alanları
     const finalDiscountPrice = isOnSale === 'true' && discountPrice ? parseFloat(discountPrice) : null;
     const finalIsOnSale = isOnSale === 'true';
 
@@ -159,8 +183,8 @@ export const createProduct = async (req, res) => {
         name,
         description,
         price: parseFloat(price),
-        discountPrice: finalDiscountPrice, // ✅ YENİ
-        isOnSale: finalIsOnSale,           // ✅ YENİ
+        discountPrice: finalDiscountPrice,
+        isOnSale: finalIsOnSale,
         stock: totalStock,
         imageUrl: mainImageUrl,
         isFeatured: isFeatured === 'true',
@@ -170,7 +194,7 @@ export const createProduct = async (req, res) => {
         variants: {
           create: variantsWithImages 
         },
-        productDetails: { // ✅ YENİ
+        productDetails: {
           create: parsedDetails.map(detail => ({
             sectionType: detail.sectionType,
             title: detail.title || null,
@@ -186,12 +210,8 @@ export const createProduct = async (req, res) => {
 
   } catch (error) {
     console.error("createProduct Error:", error);
-    if (req.files) {
-        req.files.forEach(file => {
-            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        });
-    }
-    res.status(500).json({ error: "Ürün eklenirken hata oluştu." });
+    cleanupFiles(req.files);
+    res.status(500).json({ error: "Ürün eklenirken hata oluştu: " + error.message });
   }
 };
 
@@ -214,14 +234,17 @@ export const updateProduct = async (req, res) => {
   const { id } = req.params;
   const { 
     name, description, price, 
-    discountPrice, isOnSale, // ✅ YENİ
+    discountPrice, isOnSale,
     isFeatured, categoryIds, imageUrl, variants,
-    productDetails // ✅ YENİ
+    productDetails
   } = req.body;
 
   try {
+    // ✅ req.files'ı array'e çevir
+    const filesArray = getFilesArray(req.files);
+
     let finalImageUrl = imageUrl; 
-    const mainFile = req.files?.find(f => f.fieldname === 'image');
+    const mainFile = filesArray.find(f => f.fieldname === 'image');
 
     if (mainFile) {
       finalImageUrl = await uploadToCloudinary(mainFile.path);
@@ -229,10 +252,10 @@ export const updateProduct = async (req, res) => {
 
     let catIds = categoryIds ? (Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds)) : [];
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
-    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : []; // ✅ YENİ
+    let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : [];
 
     const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
-        const variantFile = req.files?.find(f => f.fieldname === `variantImage_${index}`);
+        const variantFile = filesArray.find(f => f.fieldname === `variantImage_${index}`);
         
         let vUrl = variant.vImageUrl || null;
         
@@ -250,7 +273,6 @@ export const updateProduct = async (req, res) => {
 
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
-    // ✅ İndirim alanları
     const finalDiscountPrice = isOnSale === 'true' && discountPrice ? parseFloat(discountPrice) : null;
     const finalIsOnSale = isOnSale === 'true';
 
@@ -260,8 +282,8 @@ export const updateProduct = async (req, res) => {
         name,
         description,
         price: parseFloat(price),
-        discountPrice: finalDiscountPrice, // ✅ YENİ
-        isOnSale: finalIsOnSale,           // ✅ YENİ
+        discountPrice: finalDiscountPrice,
+        isOnSale: finalIsOnSale,
         stock: totalStock,
         imageUrl: finalImageUrl,
         isFeatured: isFeatured === 'true',
@@ -272,9 +294,8 @@ export const updateProduct = async (req, res) => {
           create: variantsWithImages
         },
         
-        // ✅ YENİ: Detayları güncelle
         productDetails: {
-          deleteMany: {}, // Önce tümünü sil
+          deleteMany: {},
           create: parsedDetails.map(detail => ({
             sectionType: detail.sectionType,
             title: detail.title || null,
@@ -289,12 +310,8 @@ export const updateProduct = async (req, res) => {
     res.json(updatedProduct);
   } catch (error) {
     console.error("updateProduct Error:", error);
-    if (req.files) {
-        req.files.forEach(file => {
-            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        });
-    }
-    res.status(500).json({ error: "Güncellenemedi." });
+    cleanupFiles(req.files);
+    res.status(500).json({ error: "Güncellenemedi: " + error.message });
   }
 };
 
