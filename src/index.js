@@ -20,6 +20,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ✅ 0. ADIM: TRUST PROXY AYARI (Render, Vercel vb. için ZORUNLU)
+app.set('trust proxy', 1); // veya true
+
 // 🟢 1. ADIM: CORS AYARLARI EN ÜSTTE OLMALI
 app.use(cors({
   origin: [
@@ -40,14 +43,14 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://www.paytr.com"],
-      frameSrc: ["'self'", "https://www.paytr.com"],  // ✅ iframe için
+      frameSrc: ["'self'", "https://www.paytr.com"],
       connectSrc: ["'self'", "https://www.paytr.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", "data:", "https:"]
     }
   },
-  crossOriginEmbedderPolicy: false,  // ✅ iframe için gerekli
+  crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
@@ -58,14 +61,39 @@ app.use(hpp());
 // 🟢 3. ADIM: PAYTR ROTASI (Rate Limit'e takılmaması için önce tanımlıyoruz)
 app.use('/api/paytr', paytrRoutes);
 
-// 🟢 4. ADIM: RATE LIMITER (Diğer rotalar için)
+// 🟢 4. ADIM: RATE LIMITER (Geliştirilmiş - Proxy desteği ile)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 100, 
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 100, // IP başına max 100 istek
   standardHeaders: true,
   legacyHeaders: false,
-  message: "Çok fazla istek gönderdiniz, lütfen 15 dakika sonra tekrar deneyin."
+  
+  // ✅ Proxy arkasındaysa IP'yi doğru al
+  validate: {
+    trustProxy: true, // trust proxy ayarına güven
+    xForwardedForHeader: false // X-Forwarded-For header'ını otomatik kullan
+  },
+  
+  // ✅ Kullanıcıyı IP + User-Agent ile tanımla (daha güvenli)
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  },
+  
+  // ✅ Rate limit aşıldığında özel mesaj
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Çok fazla istek gönderdiniz, lütfen 15 dakika sonra tekrar deneyin.',
+      code: 'RATE_LIMIT_EXCEEDED'
+    });
+  },
+  
+  // ✅ Başarılı istekler için skip (opsiyonel)
+  skip: (req) => {
+    // Health check endpoint'lerini rate limit'ten muaf tut
+    return req.path === '/' || req.path === '/health';
+  }
 });
+
 app.use('/api', limiter);
 
 // 🟢 5. ADIM: DİĞER ROTALAR
@@ -80,9 +108,43 @@ app.use('/api/coupons', couponRoutes);
 
 // Ana Dizin Testi
 app.get('/', (req, res) => {
-  res.send('API Çalışıyor!');
+  res.json({ 
+    status: 'OK',
+    message: 'Big Boss API Çalışıyor!',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ✅ Health Check Endpoint (Monitoring için)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ✅ 404 Handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint bulunamadı',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// ✅ Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Global Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Sunucu hatası',
+    code: err.code || 'INTERNAL_ERROR'
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`Sunucu ${PORT} portunda çalışıyor...`);
+  console.log(`🚀 Sunucu ${PORT} portunda çalışıyor...`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✅ Trust Proxy: Aktif`);
 });
