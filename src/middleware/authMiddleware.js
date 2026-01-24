@@ -11,16 +11,36 @@ export const protect = (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = decoded;
-      return next(); // ✅ RETURN EKLENDİ (Fonksiyon burada biter, aşağı inmez)
+      return next();
 
     } catch (error) {
-      console.error(error);
-      return res.status(401).json({ error: "Yetkisiz işlem, token geçersiz." }); // ✅ RETURN EKLENDİ
+      console.error('Token Hatası:', error.message);
+      
+      // ✅ Token süre dolmuşsa özel mesaj
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ 
+          error: "Oturum süreniz doldu. Lütfen tekrar giriş yapın.",
+          code: "TOKEN_EXPIRED"
+        });
+      }
+
+      // ✅ Token geçersizse
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({ 
+          error: "Geçersiz token. Lütfen tekrar giriş yapın.",
+          code: "INVALID_TOKEN"
+        });
+      }
+
+      return res.status(401).json({ error: "Yetkisiz işlem, token geçersiz." });
     }
   }
 
   if (!token) {
-    return res.status(401).json({ error: "Giriş yapmalısınız." }); // ✅ RETURN EKLENDİ
+    return res.status(401).json({ 
+      error: "Giriş yapmalısınız.",
+      code: "NO_TOKEN"
+    });
   }
 };
 
@@ -35,20 +55,44 @@ export const protectAdmin = (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      if (decoded.isAdmin !== true) {
-        return res.status(403).json({ error: "Bu işlem için yetkiniz yok! (Admin değilsin)" });
+      // ✅ Admin kontrolü
+      if (decoded.isAdmin !== true && decoded.role !== 'admin') {
+        return res.status(403).json({ 
+          error: "Bu işlem için admin yetkisi gerekli!",
+          code: "ADMIN_REQUIRED"
+        });
       }
 
       req.user = decoded;
-      return next(); // ✅ RETURN EKLENDİ
+      return next();
 
     } catch (error) {
-      console.error(error);
-      return res.status(401).json({ error: "Geçersiz token." }); // ✅ RETURN EKLENDİ
+      console.error('Admin Token Hatası:', error.message);
+      
+      // ✅ Token süre dolmuşsa
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ 
+          error: "Oturum süreniz doldu. Lütfen tekrar giriş yapın.",
+          code: "TOKEN_EXPIRED"
+        });
+      }
+
+      // ✅ Token geçersizse
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({ 
+          error: "Geçersiz token. Lütfen tekrar giriş yapın.",
+          code: "INVALID_TOKEN"
+        });
+      }
+
+      return res.status(401).json({ error: "Geçersiz token." });
     }
   }
 
   if (!token) {
-    return res.status(401).json({ error: "Token bulunamadı." }); // ✅ RETURN EKLENDİ
+    return res.status(401).json({ 
+      error: "Token bulunamadı.",
+      code: "NO_TOKEN"
+    });
   }
 };
