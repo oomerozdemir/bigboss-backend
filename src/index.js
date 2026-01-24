@@ -14,6 +14,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import returnRoutes from './routes/returnRoutes.js'; 
 import couponRoutes from './routes/couponRoutes.js';
 import paytrRoutes from "./routes/paytrRoutes.js";
+import bulkRoutes from "./routes/bulkRoutes.js"
 
 dotenv.config(); 
 
@@ -105,6 +106,7 @@ app.use('/api/address', addressRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/returns', returnRoutes); 
 app.use('/api/coupons', couponRoutes);
+app.use('/api/bulk', bulkRoutes);
 
 // Ana Dizin Testi
 app.get('/', (req, res) => {
