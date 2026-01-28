@@ -3,48 +3,30 @@ import path from 'path';
 
 // ⚙️ AYARLAR
 const RESIM_KLASORU = "C:/Users/oomer/Desktop/Bigboss-Urunler/26-Yaz-Sezonu"; 
-const CSV_DOSYA_ADI = "varyant_guncelleme_v2.csv";
+const CSV_DOSYA_ADI = "renk_bazli_yukleme.csv";
 
-// ✅ YENİ FORMAT: Renk artık productCode'un parçası
-const headers = ["productCode", "variantSize", "variantImage"];
+// ✅ RENK BAZLI: Bir resim = tüm bedenler
+const headers = ["productBase", "variantColor", "variantImage"];
 let csvContent = headers.join(",") + "\n";
 
-// Resim adından bilgileri çıkar
+// Ürün renklerini grupla
+const productGroups = new Map();
+
 function parseFileName(fileName) {
-    // Örnek: "3360 POZDA POZ Beyaz.jpg" 
-    // Örnek: "T-SHIRT 36 Kırmızı.jpg"
+    // Örnek: "3360 POZDA POZ Beyaz.jpg" → { base: "3360 POZDA POZ", color: "Beyaz" }
+    // Örnek: "T-SHIRT Kırmızı.jpg" → { base: "T-SHIRT", color: "Kırmızı" }
     
     const nameWithoutExt = path.parse(fileName).name;
     const parts = nameWithoutExt.split(' ');
     
-    // SENARYO 1: Dosya adında BEDEN varsa (sayısal)
-    // Örnek: "3360 POZDA POZ 36 Beyaz.jpg"
-    const bedenIndex = parts.findIndex(p => /^\d+$/.test(p)); // Sadece rakamlardan oluşan
+    // Son kelime genelde renk
+    const color = parts[parts.length - 1];
+    const base = parts.slice(0, -1).join(' ');
     
-    if (bedenIndex !== -1) {
-        const beden = parts[bedenIndex];
-        const productCode = parts.slice(0, bedenIndex).join(' '); // Bedenden önceki kısım
-        const renk = parts.slice(bedenIndex + 1).join(' '); // Bedenden sonraki kısım
-        
-        // productCode'a renk de eklenir (çünkü Beyaz ve Fuşya ayrı ürünler)
-        const fullProductCode = renk ? `${productCode} ${renk}` : productCode;
-        
-        return { 
-            productCode: fullProductCode, 
-            size: beden 
-        };
-    }
-    
-    // SENARYO 2: Dosya adında BEDEN yoksa
-    // Örnek: "3360 POZDA POZ Beyaz.jpg"
-    // Tüm dosya adı = productCode, beden = "STD" veya boş
-    return { 
-        productCode: nameWithoutExt, 
-        size: "" // Beden bilgisi yok, CSV'de boş bırakılacak
-    };
+    return { base, color };
 }
 
-function scanDirectory(dir, categoryChain = []) {
+function scanDirectory(dir) {
     const files = fs.readdirSync(dir);
 
     files.forEach(file => {
@@ -52,45 +34,55 @@ function scanDirectory(dir, categoryChain = []) {
         const stat = fs.statSync(fullPath);
 
         if (stat.isDirectory()) {
-            scanDirectory(fullPath, [...categoryChain, file]);
+            scanDirectory(fullPath);
         } else {
             if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
+                const { base, color } = parseFileName(file);
                 
-                const { productCode, size } = parseFileName(file);
-
-                const row = [
-                    `"${productCode}"`,       // Tam ürün adı (renk dahil)
-                    `"${size}"`,              // Sadece beden (36, 38, 40...)
-                    `"${file}"`               // Resim dosyası
-                ];
-
-                csvContent += row.join(",") + "\n";
-                console.log(`📸 Ürün: "${productCode}" | Beden: ${size || 'YOK'} | Dosya: ${file}`);
+                // Gruplama: Aynı baz ürün ve renk için sadece 1 resim
+                const key = `${base}|${color}`;
+                
+                if (!productGroups.has(key)) {
+                    productGroups.set(key, {
+                        base,
+                        color,
+                        image: file
+                    });
+                }
             }
         }
     });
 }
 
 try {
-    console.log("📂 Resim klasörü taranıyor...\n");
+    console.log("📂 Resim klasörü taranıyor ve renkler gruplanıyor...\n");
     scanDirectory(RESIM_KLASORU);
+    
+    // CSV'ye yaz
+    productGroups.forEach((item) => {
+        const row = [
+            `"${item.base}"`,       // Ürün tabanı (renk hariç)
+            `"${item.color}"`,      // Renk
+            `"${item.image}"`       // Resim
+        ];
+        
+        csvContent += row.join(",") + "\n";
+        console.log(`🎨 ${item.base} | Renk: ${item.color} → ${item.image}`);
+    });
+    
     fs.writeFileSync(CSV_DOSYA_ADI, csvContent, 'utf8');
     
     console.log(`\n✅ '${CSV_DOSYA_ADI}' oluşturuldu!`);
-    console.log(`📊 Toplam ${csvContent.split('\n').length - 2} satır eklendi\n`);
+    console.log(`📊 ${productGroups.size} renk grubu listelendi\n`);
     
-    console.log("💡 ÖRNEKLER:");
-    console.log("   Dosya: '3360 POZDA POZ 36 Beyaz.jpg'");
-    console.log("   → productCode: '3360 POZDA POZ Beyaz'");
-    console.log("   → variantSize: '36'\n");
+    console.log("💡 NASIL ÇALIŞIR:");
+    console.log("   1. CSV'deki her satır bir RENK'i temsil eder");
+    console.log("   2. Sistem o rengin TÜM bedenlerine aynı resmi atar");
+    console.log("   3. Aynı resmi tekrar tekrar yüklemeye gerek yok!\n");
     
-    console.log("   Dosya: '3360 POZDA POZ Beyaz.jpg'");
-    console.log("   → productCode: '3360 POZDA POZ Beyaz'");
-    console.log("   → variantSize: '' (boş - tüm bedenlere uygulanır)\n");
-    
-    console.log("⚠️  ÖNEMLİ:");
-    console.log("   - Eğer BEDEN bilgisi CSV'de BOŞ ise, o ürünün TÜM varyantlarına resim uygulanır");
-    console.log("   - Eğer BEDEN belirtilmişse, sadece o bedene resim uygulanır\n");
+    console.log("📝 ÖRNEK:");
+    console.log("   CSV: '3360 POZDA POZ', 'Beyaz', 'foto.jpg'");
+    console.log("   Sonuç: TÜM beyaz varyantlar (36, 38, 40...) bu resmi alır\n");
     
 } catch (error) {
     console.error("❌ Hata:", error.message);
