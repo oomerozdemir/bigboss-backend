@@ -5,6 +5,29 @@ import { Parser } from 'json2csv';
 
 const prisma = new PrismaClient();
 
+const findOrCreateCategory = async (categoryName) => {
+    if (!categoryName) return null;
+    
+    // Önce alt kategori olarak ara
+    let subCat = await prisma.subCategory.findFirst({
+        where: { name: { equals: categoryName, mode: 'insensitive' } }
+    });
+
+    if (subCat) return subCat.id;
+
+    // Yoksa "Genel" adında bir ana kategori bul/oluştur ve altına ekle
+    let mainCat = await prisma.mainCategory.findFirst({ where: { name: "Genel" } });
+    if (!mainCat) {
+        mainCat = await prisma.mainCategory.create({ data: { name: "Genel" } });
+    }
+
+    subCat = await prisma.subCategory.create({
+        data: { name: categoryName, mainCategoryId: mainCat.id }
+    });
+
+    return subCat.id;
+};
+
 // Yardımcı: Cloudinary Yükleme
 const uploadToCloudinary = async (filePath) => {
   try {
@@ -66,63 +89,81 @@ export const exportProductsCsv = async (req, res) => {
 // 2. TOPLU YÜKLEME VE GÜNCELLEME (Batch İşlemi)
 export const bulkImportProducts = async (req, res) => {
   try {
-    // Frontend'den gelen veriler (Multipart Form Data)
-    // req.body.data -> JSON string formatında ürün listesi
-    // req.files -> Yüklenen tüm resim dosyaları
-    
     if (!req.body.data) {
       return res.status(400).json({ error: "Ürün verisi bulunamadı." });
     }
 
-    const productsToUpdate = JSON.parse(req.body.data);
+    const productsToProcess = JSON.parse(req.body.data);
     const uploadedFiles = req.files || [];
     
     const results = [];
 
-    // Her bir ürün satırı için işlem yap
-    for (const item of productsToUpdate) {
+    for (const item of productsToProcess) {
       try {
         let mainImageUrl = null;
 
-        // 1. Ana Resmi Bul ve Yükle
+        // 1. Resim Eşleştirme (CSV'deki isim = Yüklenen dosya ismi)
         if (item.mainImageName) {
-          const fileMatch = uploadedFiles.find(f => f.originalname === item.mainImageName);
+          const fileMatch = uploadedFiles.find(f => f.originalname === item.mainImageName.trim());
           if (fileMatch) {
             mainImageUrl = await uploadToCloudinary(fileMatch.path);
-            fs.unlinkSync(fileMatch.path); // Temp dosyayı sil
+            try { fs.unlinkSync(fileMatch.path); } catch(e){} // Temp dosyayı sil
           }
         }
 
-        // 2. Veritabanı İşlemi (Güncelleme veya Ekleme)
-        // Eğer ID varsa güncelle, yoksa yeni oluştur
-        if (item.id && item.id !== "new") {
+        // 2. İşlem Tipi Belirleme (Update vs Create)
+        if (item.id && item.id !== "new" && item.id.trim() !== "") {
+            // --- GÜNCELLEME ---
             const updateData = {
                 name: item.name,
                 description: item.description,
                 price: parseFloat(item.price),
                 stock: parseInt(item.stock),
             };
-            
             if (mainImageUrl) updateData.imageUrl = mainImageUrl;
 
             await prisma.product.update({
                 where: { id: parseInt(item.id) },
                 data: updateData
             });
-            results.push({ id: item.id, status: "Updated" });
+            results.push({ id: item.id, name: item.name, status: "GÜNCELLENDİ" });
+
         } else {
-            // Yeni Ürün Ekleme Mantığı (Kategori bulma vb. eklenebilir)
-            // Basitlik için şimdilik sadece güncelleme odaklı yazdım, 
-            // create için kategori ID'sini de CSV'de almanız gerekir.
+            // --- YENİ EKLEME ---
+            // Kategori ID'sini bul veya oluştur
+            const catId = await findOrCreateCategory(item.category || "Diğer");
+
+            const newProduct = await prisma.product.create({
+                data: {
+                    name: item.name,
+                    description: item.description || "",
+                    price: parseFloat(item.price || 0),
+                    stock: parseInt(item.stock || 0),
+                    imageUrl: mainImageUrl, // Resim bulunduysa ekle, yoksa null
+                    isFeatured: true,
+                    categories: {
+                        connect: [{ id: catId }]
+                    },
+                    // Otomatik varsayılan varyant ekle (Stok yönetimi için gerekli)
+                    variants: {
+                        create: [{
+                            size: "STD",
+                            color: "Standart",
+                            stock: parseInt(item.stock || 0)
+                        }]
+                    }
+                }
+            });
+            results.push({ id: newProduct.id, name: newProduct.name, status: "YENİ EKLENDİ" });
         }
 
       } catch (err) {
-        console.error(`Ürün ID ${item.id} hatası:`, err);
-        results.push({ id: item.id, status: "Failed", error: err.message });
+        console.error(`Satır Hatası (${item.name}):`, err.message);
+        results.push({ name: item.name, status: "HATA", error: err.message });
       }
     }
 
-    // Kullanılmayan dosyaları temizle (Garanti olsun)
+    // Kullanılmayan kalan dosyaları temizle
     uploadedFiles.forEach(f => {
         if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
     });
