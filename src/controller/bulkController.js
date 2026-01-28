@@ -5,6 +5,7 @@ import { Parser } from 'json2csv';
 
 const prisma = new PrismaClient();
 
+// Yardımcı: Kategori Bul veya Oluştur
 const findOrCreateCategory = async (categoryName) => {
     if (!categoryName) return null;
     
@@ -15,7 +16,7 @@ const findOrCreateCategory = async (categoryName) => {
 
     if (subCat) return subCat.id;
 
-    // Yoksa "Genel" adında bir ana kategori bul/oluştur ve altına ekle
+    // Yoksa "Genel" adında bir ana kategori bul/oluştur
     let mainCat = await prisma.mainCategory.findFirst({ where: { name: "Genel" } });
     if (!mainCat) {
         mainCat = await prisma.mainCategory.create({ data: { name: "Genel" } });
@@ -36,7 +37,6 @@ const uploadToCloudinary = async (filePath) => {
       format: 'webp',
       quality: 'auto'
     });
-    // Yükleme bitince dosyayı silmeyi unutma (Controller içinde silinecek)
     return result.secure_url;
   } catch (error) {
     console.error("Cloudinary Error:", error);
@@ -44,7 +44,7 @@ const uploadToCloudinary = async (filePath) => {
   }
 };
 
-// 1. MEVCUT ÜRÜNLERİ CSV OLARAK İNDİR
+// 1. MEVCUT ÜRÜNLERİ CSV OLARAK İNDİR (Değişiklik Yok)
 export const exportProductsCsv = async (req, res) => {
   try {
     const products = await prisma.product.findMany({
@@ -52,15 +52,11 @@ export const exportProductsCsv = async (req, res) => {
       orderBy: { id: 'asc' }
     });
 
-    const fields = ['id', 'name', 'price', 'stock', 'description', 'category', 'mainImageName', 'variantImages'];
+    const fields = ['id', 'name', 'price', 'stock', 'description', 'category', 'mainImageName'];
     const opts = { fields };
 
     const csvData = products.map(p => {
-      // Kategori ismini al
       const catName = p.categories[0]?.name || "";
-      // Varyant resimlerini string yap
-      const variantsStr = p.variants.map(v => v.vImageUrl).join(';');
-
       return {
         id: p.id,
         name: p.name,
@@ -68,8 +64,7 @@ export const exportProductsCsv = async (req, res) => {
         stock: p.stock,
         description: p.description || "",
         category: catName,
-        mainImageName: "", // Kullanıcı buraya dosya adı girecek (örn: 123.jpg)
-        variantImages: ""  // Kullanıcı buraya dosya adları girecek
+        mainImageName: "" 
       };
     });
 
@@ -86,104 +81,145 @@ export const exportProductsCsv = async (req, res) => {
   }
 };
 
-// 2. TOPLU YÜKLEME VE GÜNCELLEME (Batch İşlemi)
+// 2. TOPLU YÜKLEME VE GÜNCELLEME (AKILLI MOD)
 export const bulkImportProducts = async (req, res) => {
   try {
     if (!req.body.data) {
-      return res.status(400).json({ error: "Veri bulunamadı." });
+      return res.status(400).json({ error: "Ürün verisi bulunamadı." });
     }
 
-    const items = JSON.parse(req.body.data);
+    const productsToProcess = JSON.parse(req.body.data);
     const uploadedFiles = req.files || [];
+    
     const results = [];
 
-    console.log(`📦 ${items.length} ürün işleniyor...`);
+    console.log(`📦 ${productsToProcess.length} satır işleniyor...`);
 
-    for (const item of items) {
-      // ✅ 1. Değişkeni En Başta Tanımla (Hem productCode hem name desteği)
+    for (const item of productsToProcess) {
+      // CSV'deki 'productCode' yoksa 'name' alanını kod olarak kabul et
       const productCode = item.productCode || item.name; 
       const imageFileName = item.imageName || item.mainImageName;
 
       try {
-        if (!productCode || !imageFileName) {
-            console.log("Eksik bilgi:", item);
-            continue; 
-        }
-
-        // 2. Veritabanında Ürünü Bul
-        let product = await prisma.product.findFirst({
-            where: {
-                OR: [
-                    { name: productCode }, 
-                    { description: { contains: productCode } }
-                ]
-            },
-            include: { variants: true }
-        });
-
-        // 3. Resmi Yükle
-        let uploadedImageUrl = null;
-        const fileMatch = uploadedFiles.find(f => f.originalname === imageFileName.trim());
-        
-        if (fileMatch) {
-            uploadedImageUrl = await uploadToCloudinary(fileMatch.path);
-            try { fs.unlinkSync(fileMatch.path); } catch(e){} 
-        }
-
-        if (!uploadedImageUrl) {
-            results.push({ code: productCode, status: "❌ RESİM YÜKLENEMEDİ" });
+        if (!productCode) {
+            results.push({ status: "ATLANDI", error: "Ürün kodu/adı eksik" });
             continue;
         }
 
+        // 1. Veritabanında Ürünü Bul (ID, İsim veya Açıklama içindeki koda göre)
+        let product = null;
+        
+        // Eğer ID varsa önce ona bak
+        if (item.id && item.id !== "new" && item.id.trim() !== "") {
+            product = await prisma.product.findUnique({ where: { id: parseInt(item.id) } });
+        }
+
+        // ID ile bulunamadıysa isme veya açıklamadaki koda bak
+        if (!product) {
+            product = await prisma.product.findFirst({
+                where: {
+                    OR: [
+                        { name: productCode }, 
+                        { description: { contains: productCode } }
+                    ]
+                }
+            });
+        }
+
+        // 2. Resim Varsa Yükle
+        let mainImageUrl = null;
+        if (imageFileName) {
+          const fileMatch = uploadedFiles.find(f => f.originalname === imageFileName.trim());
+          if (fileMatch) {
+            mainImageUrl = await uploadToCloudinary(fileMatch.path);
+            try { fs.unlinkSync(fileMatch.path); } catch(e){} // Temp dosyayı sil
+          }
+        }
+
         if (product) {
-            // ✅ DURUM 1: ÜRÜN VAR -> GÜNCELLE
-            await prisma.productVariant.updateMany({
-                where: { productId: product.id },
-                data: { vImageUrl: uploadedImageUrl }
-            });
+            // ====================================================
+            // ✅ DURUM 1: ÜRÜN VAR -> MEVCUT VERİYİ KORUYARAK GÜNCELLE
+            // ====================================================
+            
+            const updateData = {}; // Boş obje ile başla
 
-            await prisma.product.update({
-                where: { id: product.id },
-                data: { imageUrl: uploadedImageUrl }
-            });
+            // Sadece CSV'de dolu olan alanları ekle (Mevcut veriyi bozma)
+            if (item.name && item.name !== product.name) updateData.name = item.name;
+            if (item.description) updateData.description = item.description;
+            if (item.price && parseFloat(item.price) > 0) updateData.price = parseFloat(item.price);
+            if (item.stock && parseInt(item.stock) > 0) updateData.stock = parseInt(item.stock);
+            
+            // Eğer resim yüklendiyse, ana ürün resmini güncelle
+            if (mainImageUrl) {
+                updateData.imageUrl = mainImageUrl;
+            }
 
-            results.push({ code: productCode, status: "✅ GÜNCELLENDİ" });
+            // Ana ürünü güncelle (Sadece değişen alanlar)
+            if (Object.keys(updateData).length > 0) {
+                await prisma.product.update({
+                    where: { id: product.id },
+                    data: updateData
+                });
+            }
+
+            // 🌟 KRİTİK: VARYANTLARI SİLMEDEN GÜNCELLE
+            // Eğer yeni bir resim yüklendiyse, bu ürünün TÜM varyantlarına bu resmi ata.
+            if (mainImageUrl) {
+                await prisma.productVariant.updateMany({
+                    where: { productId: product.id }, // Bu ürüne ait olanlar
+                    data: { vImageUrl: mainImageUrl } // Resim alanını güncelle
+                });
+            }
+
+            results.push({ code: productCode, status: "GÜNCELLENDİ", image: mainImageUrl ? "Eklendi" : "Yok" });
 
         } else {
+            // ====================================================
             // ✅ DURUM 2: ÜRÜN YOK -> YENİ OLUŞTUR
-            // BURASI HATALIYDI, ARTIK productCode KULLANILIYOR
+            // ====================================================
             
             const catId = await findOrCreateCategory(item.category || "Diğer");
-            
+
             const newProduct = await prisma.product.create({
                 data: {
-                    name: productCode, // 👈 DÜZELTME BURADA (item.name yerine productCode)
-                    description: `Nebim Kod: ${productCode}`,
-                    price: 0, 
-                    stock: 0, 
-                    imageUrl: uploadedImageUrl,
+                    name: productCode, 
+                    description: item.description || `Nebim Kod: ${productCode}`,
+                    price: parseFloat(item.price || 0),
+                    stock: parseInt(item.stock || 0),
+                    imageUrl: mainImageUrl, // Resim varsa ekle, yoksa null
                     isFeatured: true,
-                    categories: { connect: [{ id: catId }] },
+                    categories: {
+                        connect: [{ id: catId }]
+                    },
+                    // Yeni ürün olduğu için varsayılan bir varyant oluşturuyoruz
                     variants: {
-                        create: [{ size: "STD", color: "Standart", stock: 0, vImageUrl: uploadedImageUrl }]
+                        create: [{
+                            size: "STD",
+                            color: "Standart",
+                            stock: parseInt(item.stock || 0),
+                            vImageUrl: mainImageUrl // Varyanta da resmi ekle
+                        }]
                     }
                 }
             });
-            results.push({ code: newProduct.name, status: "🆕 YENİ OLUŞTURULDU" });
+            results.push({ code: newProduct.name, status: "YENİ EKLENDİ" });
         }
 
       } catch (err) {
-        console.error(`Hata (${productCode}):`, err.message);
-        results.push({ code: productCode, status: "⚠️ SİSTEM HATASI", error: err.message });
+        console.error(`Satır Hatası (${item.name}):`, err.message);
+        results.push({ name: item.name, status: "HATA", error: err.message });
       }
     }
 
-    uploadedFiles.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
+    // Kullanılmayan dosyaları temizle
+    uploadedFiles.forEach(f => {
+        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+    });
 
     res.json({ success: true, processed: results.length, details: results });
 
   } catch (error) {
     console.error("Bulk Import Error:", error);
-    res.status(500).json({ error: "İşlem başarısız: " + error.message });
+    res.status(500).json({ error: "Toplu işlem başarısız." });
   }
 };
