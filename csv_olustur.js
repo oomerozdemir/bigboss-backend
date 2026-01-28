@@ -1,41 +1,47 @@
 import fs from 'fs';
 import path from 'path';
 
-// ⚙️ AYARLAR: Resim klasörünüzün tam yolu
+// ⚙️ AYARLAR
 const RESIM_KLASORU = "C:/Users/oomer/Desktop/Bigboss-Urunler/26-Yaz-Sezonu"; 
+const CSV_DOSYA_ADI = "varyant_guncelleme_v2.csv";
 
-const CSV_DOSYA_ADI = "varyant_guncelleme.csv";
-
-// ✅ VARYANT BAZLI: Her resim bir ürünün bir varyantı
-const headers = ["productCode", "variantSize", "variantColor", "variantImage", "variantStock"];
+// ✅ YENİ FORMAT: Renk artık productCode'un parçası
+const headers = ["productCode", "variantSize", "variantImage"];
 let csvContent = headers.join(",") + "\n";
 
-// Resim adından varyant bilgilerini çıkar
+// Resim adından bilgileri çıkar
 function parseFileName(fileName) {
-    // Örnek: "3360 POZDA POZ Beyaz.jpg" -> { code: "3360 POZDA POZ", color: "Beyaz" }
-    // Örnek: "T-SHIRT S Kırmızı.jpg" -> { code: "T-SHIRT", size: "S", color: "Kırmızı" }
+    // Örnek: "3360 POZDA POZ Beyaz.jpg" 
+    // Örnek: "T-SHIRT 36 Kırmızı.jpg"
     
     const nameWithoutExt = path.parse(fileName).name;
-    
-    // Son kelime genelde renk
     const parts = nameWithoutExt.split(' ');
-    const color = parts[parts.length - 1]; // Son kelime = renk
     
-    // Eğer sondan 2. kelime beden ise (S, M, L, XL, XXL, STD)
-    const sizePattern = /^(XS|S|M|L|XL|XXL|XXXL|STD|ONE SIZE|\d+)$/i;
-    const potentialSize = parts[parts.length - 2];
+    // SENARYO 1: Dosya adında BEDEN varsa (sayısal)
+    // Örnek: "3360 POZDA POZ 36 Beyaz.jpg"
+    const bedenIndex = parts.findIndex(p => /^\d+$/.test(p)); // Sadece rakamlardan oluşan
     
-    let size = "STD";
-    let code = nameWithoutExt;
-    
-    if (potentialSize && sizePattern.test(potentialSize)) {
-        size = potentialSize.toUpperCase();
-        code = parts.slice(0, -2).join(' '); // Beden ve renk hariç kalan = ürün kodu
-    } else {
-        code = parts.slice(0, -1).join(' '); // Sadece renk hariç kalan = ürün kodu
+    if (bedenIndex !== -1) {
+        const beden = parts[bedenIndex];
+        const productCode = parts.slice(0, bedenIndex).join(' '); // Bedenden önceki kısım
+        const renk = parts.slice(bedenIndex + 1).join(' '); // Bedenden sonraki kısım
+        
+        // productCode'a renk de eklenir (çünkü Beyaz ve Fuşya ayrı ürünler)
+        const fullProductCode = renk ? `${productCode} ${renk}` : productCode;
+        
+        return { 
+            productCode: fullProductCode, 
+            size: beden 
+        };
     }
     
-    return { code, size, color };
+    // SENARYO 2: Dosya adında BEDEN yoksa
+    // Örnek: "3360 POZDA POZ Beyaz.jpg"
+    // Tüm dosya adı = productCode, beden = "STD" veya boş
+    return { 
+        productCode: nameWithoutExt, 
+        size: "" // Beden bilgisi yok, CSV'de boş bırakılacak
+    };
 }
 
 function scanDirectory(dir, categoryChain = []) {
@@ -50,37 +56,42 @@ function scanDirectory(dir, categoryChain = []) {
         } else {
             if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
                 
-                const { code, size, color } = parseFileName(file);
+                const { productCode, size } = parseFileName(file);
 
                 const row = [
-                    `"${code}"`,              // productCode (Ürünü bulmak için)
-                    `"${size}"`,              // variantSize (Hangi varyant?)
-                    `"${color}"`,             // variantColor (Hangi renk?)
-                    `"${file}"`,              // variantImage (Resim dosyası)
-                    `""`                      // variantStock (Boş = değişmesin)
+                    `"${productCode}"`,       // Tam ürün adı (renk dahil)
+                    `"${size}"`,              // Sadece beden (36, 38, 40...)
+                    `"${file}"`               // Resim dosyası
                 ];
 
                 csvContent += row.join(",") + "\n";
-                console.log(`📸 ${code} | ${size} | ${color} → ${file}`);
+                console.log(`📸 Ürün: "${productCode}" | Beden: ${size || 'YOK'} | Dosya: ${file}`);
             }
         }
     });
 }
 
 try {
-    console.log("📂 Klasör taranıyor ve varyantlar parse ediliyor...\n");
+    console.log("📂 Resim klasörü taranıyor...\n");
     scanDirectory(RESIM_KLASORU);
     fs.writeFileSync(CSV_DOSYA_ADI, csvContent, 'utf8');
+    
     console.log(`\n✅ '${CSV_DOSYA_ADI}' oluşturuldu!`);
-    console.log(`📊 Toplam ${csvContent.split('\n').length - 2} varyant listelendi\n`);
-    console.log("💡 KULLANIM:");
-    console.log("   1. Bu CSV dosyasını kontrol edin");
-    console.log("   2. productCode doğruysa, Admin Panelinden yükleyin");
-    console.log("   3. Sistem her satır için ilgili varyantın resmini güncelleyecek\n");
-    console.log("⚠️  ÖNEMLI:");
-    console.log("   - Dosya adı formatı: 'ÜRÜN_KODU BEDEN Renk.jpg'");
-    console.log("   - Örnek: '3360 POZDA POZ S Beyaz.jpg'");
-    console.log("   - Beden yoksa: '3360 POZDA POZ Beyaz.jpg' (STD olarak alınır)\n");
+    console.log(`📊 Toplam ${csvContent.split('\n').length - 2} satır eklendi\n`);
+    
+    console.log("💡 ÖRNEKLER:");
+    console.log("   Dosya: '3360 POZDA POZ 36 Beyaz.jpg'");
+    console.log("   → productCode: '3360 POZDA POZ Beyaz'");
+    console.log("   → variantSize: '36'\n");
+    
+    console.log("   Dosya: '3360 POZDA POZ Beyaz.jpg'");
+    console.log("   → productCode: '3360 POZDA POZ Beyaz'");
+    console.log("   → variantSize: '' (boş - tüm bedenlere uygulanır)\n");
+    
+    console.log("⚠️  ÖNEMLİ:");
+    console.log("   - Eğer BEDEN bilgisi CSV'de BOŞ ise, o ürünün TÜM varyantlarına resim uygulanır");
+    console.log("   - Eğer BEDEN belirtilmişse, sadece o bedene resim uygulanır\n");
+    
 } catch (error) {
     console.error("❌ Hata:", error.message);
 }
