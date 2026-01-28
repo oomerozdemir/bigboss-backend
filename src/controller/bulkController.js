@@ -90,88 +90,100 @@ export const exportProductsCsv = async (req, res) => {
 export const bulkImportProducts = async (req, res) => {
   try {
     if (!req.body.data) {
-      return res.status(400).json({ error: "Ürün verisi bulunamadı." });
+      return res.status(400).json({ error: "Veri bulunamadı." });
     }
 
-    const productsToProcess = JSON.parse(req.body.data);
+    const items = JSON.parse(req.body.data);
     const uploadedFiles = req.files || [];
-    
     const results = [];
 
-    for (const item of productsToProcess) {
-      try {
-        let mainImageUrl = null;
+    console.log(`📦 ${items.length} ürün işleniyor...`);
 
-        // 1. Resim Eşleştirme (CSV'deki isim = Yüklenen dosya ismi)
-        if (item.mainImageName) {
-          const fileMatch = uploadedFiles.find(f => f.originalname === item.mainImageName.trim());
-          if (fileMatch) {
-            mainImageUrl = await uploadToCloudinary(fileMatch.path);
-            try { fs.unlinkSync(fileMatch.path); } catch(e){} // Temp dosyayı sil
-          }
+    for (const item of items) {
+      // ✅ 1. Değişkeni En Başta Tanımla (Hem productCode hem name desteği)
+      const productCode = item.productCode || item.name; 
+      const imageFileName = item.imageName || item.mainImageName;
+
+      try {
+        if (!productCode || !imageFileName) {
+            console.log("Eksik bilgi:", item);
+            continue; 
         }
 
-        // 2. İşlem Tipi Belirleme (Update vs Create)
-        if (item.id && item.id !== "new" && item.id.trim() !== "") {
-            // --- GÜNCELLEME ---
-            const updateData = {
-                name: item.name,
-                description: item.description,
-                price: parseFloat(item.price),
-                stock: parseInt(item.stock),
-            };
-            if (mainImageUrl) updateData.imageUrl = mainImageUrl;
+        // 2. Veritabanında Ürünü Bul
+        let product = await prisma.product.findFirst({
+            where: {
+                OR: [
+                    { name: productCode }, 
+                    { description: { contains: productCode } }
+                ]
+            },
+            include: { variants: true }
+        });
+
+        // 3. Resmi Yükle
+        let uploadedImageUrl = null;
+        const fileMatch = uploadedFiles.find(f => f.originalname === imageFileName.trim());
+        
+        if (fileMatch) {
+            uploadedImageUrl = await uploadToCloudinary(fileMatch.path);
+            try { fs.unlinkSync(fileMatch.path); } catch(e){} 
+        }
+
+        if (!uploadedImageUrl) {
+            results.push({ code: productCode, status: "❌ RESİM YÜKLENEMEDİ" });
+            continue;
+        }
+
+        if (product) {
+            // ✅ DURUM 1: ÜRÜN VAR -> GÜNCELLE
+            await prisma.productVariant.updateMany({
+                where: { productId: product.id },
+                data: { vImageUrl: uploadedImageUrl }
+            });
 
             await prisma.product.update({
-                where: { id: parseInt(item.id) },
-                data: updateData
+                where: { id: product.id },
+                data: { imageUrl: uploadedImageUrl }
             });
-            results.push({ id: item.id, name: item.name, status: "GÜNCELLENDİ" });
+
+            results.push({ code: productCode, status: "✅ GÜNCELLENDİ" });
 
         } else {
-            // --- YENİ EKLEME ---
-            // Kategori ID'sini bul veya oluştur
+            // ✅ DURUM 2: ÜRÜN YOK -> YENİ OLUŞTUR
+            // BURASI HATALIYDI, ARTIK productCode KULLANILIYOR
+            
             const catId = await findOrCreateCategory(item.category || "Diğer");
-
+            
             const newProduct = await prisma.product.create({
                 data: {
-                    name: item.name,
-                    description: item.description || "",
-                    price: parseFloat(item.price || 0),
-                    stock: parseInt(item.stock || 0),
-                    imageUrl: mainImageUrl, // Resim bulunduysa ekle, yoksa null
+                    name: productCode, // 👈 DÜZELTME BURADA (item.name yerine productCode)
+                    description: `Nebim Kod: ${productCode}`,
+                    price: 0, 
+                    stock: 0, 
+                    imageUrl: uploadedImageUrl,
                     isFeatured: true,
-                    categories: {
-                        connect: [{ id: catId }]
-                    },
-                    // Otomatik varsayılan varyant ekle (Stok yönetimi için gerekli)
+                    categories: { connect: [{ id: catId }] },
                     variants: {
-                        create: [{
-                            size: "STD",
-                            color: "Standart",
-                            stock: parseInt(item.stock || 0)
-                        }]
+                        create: [{ size: "STD", color: "Standart", stock: 0, vImageUrl: uploadedImageUrl }]
                     }
                 }
             });
-            results.push({ id: newProduct.id, name: newProduct.name, status: "YENİ EKLENDİ" });
+            results.push({ code: newProduct.name, status: "🆕 YENİ OLUŞTURULDU" });
         }
 
       } catch (err) {
-        console.error(`Satır Hatası (${item.name}):`, err.message);
-        results.push({ name: item.name, status: "HATA", error: err.message });
+        console.error(`Hata (${productCode}):`, err.message);
+        results.push({ code: productCode, status: "⚠️ SİSTEM HATASI", error: err.message });
       }
     }
 
-    // Kullanılmayan kalan dosyaları temizle
-    uploadedFiles.forEach(f => {
-        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-    });
+    uploadedFiles.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
 
     res.json({ success: true, processed: results.length, details: results });
 
   } catch (error) {
     console.error("Bulk Import Error:", error);
-    res.status(500).json({ error: "Toplu işlem başarısız." });
+    res.status(500).json({ error: "İşlem başarısız: " + error.message });
   }
 };
