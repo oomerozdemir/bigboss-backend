@@ -78,7 +78,7 @@ export const exportProductsCsv = async (req, res) => {
   }
 };
 
-// ✅ 2. IMPORT İŞLEMİ (Akıllı Eşleştirme ve Resim Güncelleme)
+// ✅ 2. IMPORT İŞLEMİ - SADECE MEVCUT ÜRÜNLERİ GÜNCELLER
 export const bulkImportProducts = async (req, res) => {
   try {
     if (!req.body.data) {
@@ -94,31 +94,54 @@ export const bulkImportProducts = async (req, res) => {
     for (const item of items) {
       // CSV sütun isimlerine göre kod ve resim adını al
       const productCode = item.productCode || item.name; 
-      const imageFileName = item.imageName || item.mainImageName;
+      const imageFileName = item.mainImageName || item.imageName;
 
       try {
         if (!productCode) {
-            continue; // Kod yoksa atla
+            results.push({ code: "UNKNOWN", status: "ATLAND", error: "productCode bulunamadı" });
+            continue;
         }
 
-        // --- ADIM 1: ÜRÜNÜ BUL (ID veya İSİM ile) ---
+        // --- ADIM 1: ÜRÜNÜ BUL (productCode ile) ---
         let product = null;
 
         // A) Önce ID varsa ona bak
         if (item.id && item.id.toString().trim() !== "" && item.id !== "new") {
-            product = await prisma.product.findUnique({ where: { id: parseInt(item.id) } });
+            product = await prisma.product.findUnique({ 
+              where: { id: parseInt(item.id) },
+              include: { variants: true } 
+            });
         }
 
-        // B) ID yoksa veya bulamadıysa İSİM/KOD ile ara (Önemli Kısım Burası)
-        if (!product) {
+        // B) ID yoksa productCode ile ara - description içinde "Nebim Kod: XXX" formatında ara
+        if (!product && productCode) {
             product = await prisma.product.findFirst({
                 where: {
-                    OR: [
-                        { name: { equals: productCode, mode: 'insensitive' } }, // Tam eşleşme
-                        { description: { contains: productCode } } // Açıklamada geçiyor mu?
-                    ]
-                }
+                    description: { contains: `Nebim Kod: ${productCode}`, mode: 'insensitive' }
+                },
+                include: { variants: true }
             });
+        }
+
+        // C) Hala bulamadıysa name ile direkt eşleşme dene
+        if (!product && productCode) {
+            product = await prisma.product.findFirst({
+                where: {
+                    name: { equals: productCode, mode: 'insensitive' }
+                },
+                include: { variants: true }
+            });
+        }
+
+        // ❌ ÜRÜN BULUNAMADIYSA -> YENİ ÜRÜN OLUŞTURMA, SADECE UYARI VER
+        if (!product) {
+            results.push({ 
+              code: productCode, 
+              status: "BULUNAMADI ❌", 
+              error: "Sistemde bu kod/isimle ürün yok - önce manuel olarak eklenmeli" 
+            });
+            console.log(`⚠️  ATLAND: ${productCode} - Ürün bulunamadı`);
+            continue;
         }
 
         // --- ADIM 2: RESMİ YÜKLE ---
@@ -128,76 +151,86 @@ export const bulkImportProducts = async (req, res) => {
           if (fileMatch) {
             mainImageUrl = await uploadToCloudinary(fileMatch.path);
             try { fs.unlinkSync(fileMatch.path); } catch(e){} 
+          } else {
+            console.log(`⚠️  Resim bulunamadı: ${imageFileName}`);
           }
         }
 
-        // --- ADIM 3: GÜNCELLEME VEYA OLUŞTURMA ---
-        if (product) {
-            // ✅ ÜRÜN VARSA -> Sadece Gerekli Alanları Güncelle
+        // --- ADIM 3: MEVCUT ÜRÜNÜ GÜNCELLE ---
+        const updateData = {};
+        
+        // CSV'de fiyat/stok varsa güncelle
+        if (item.price && parseFloat(item.price) > 0) {
+          updateData.price = parseFloat(item.price);
+        }
+        if (item.stock && parseInt(item.stock) >= 0) {
+          updateData.stock = parseInt(item.stock);
+        }
+        
+        // Resim Yüklendiyse
+        if (mainImageUrl) {
+            updateData.imageUrl = mainImageUrl; // Ana resim
             
-            const updateData = {};
-            // CSV'de fiyat/stok varsa güncelle, yoksa eskisi kalsın
-            if (item.price && parseFloat(item.price) > 0) updateData.price = parseFloat(item.price);
-            if (item.stock && parseInt(item.stock) > 0) updateData.stock = parseInt(item.stock);
-            
-            // Resim Yüklendiyse
-            if (mainImageUrl) {
-                updateData.imageUrl = mainImageUrl; // Ana resim
-                
-                // 🔥 KRİTİK: Varyantları SİLMEDEN sadece resimlerini güncelle
-                await prisma.productVariant.updateMany({
-                    where: { productId: product.id },
-                    data: { vImageUrl: mainImageUrl }
-                });
+            // 🔥 Varyantların resimlerini de güncelle (varyantları silmeden)
+            if (product.variants && product.variants.length > 0) {
+              await prisma.productVariant.updateMany({
+                  where: { productId: product.id },
+                  data: { vImageUrl: mainImageUrl }
+              });
             }
+        }
 
-            // Ana ürün güncelleme işlemini yap
-            if (Object.keys(updateData).length > 0) {
-                await prisma.product.update({
-                    where: { id: product.id },
-                    data: updateData
-                });
-            }
+        // Kategori güncellenmesi isteniyor mu?
+        if (item.category) {
+          const catId = await findOrCreateCategory(item.category);
+          if (catId) {
+            updateData.categories = { set: [{ id: catId }] };
+          }
+        }
 
-            results.push({ code: productCode, status: "GÜNCELLENDİ (Mevcut Ürün)" });
-
-        } else {
-            // ✅ ÜRÜN YOKSA -> Yeni Oluştur
-            const catId = await findOrCreateCategory(item.category || "Diğer");
-
-            const newProduct = await prisma.product.create({
-                data: {
-                    name: productCode, 
-                    description: item.description || `Nebim Kod: ${productCode}`,
-                    price: parseFloat(item.price || 0),
-                    stock: parseInt(item.stock || 0),
-                    imageUrl: mainImageUrl,
-                    isFeatured: true,
-                    categories: { connect: [{ id: catId }] },
-                    // Yeni ürün olduğu için varsayılan varyant oluştur
-                    variants: {
-                        create: [{
-                            size: "STD",
-                            color: "Standart",
-                            stock: parseInt(item.stock || 0),
-                            vImageUrl: mainImageUrl
-                        }]
-                    }
-                }
+        // Ana ürün güncelleme
+        if (Object.keys(updateData).length > 0) {
+            await prisma.product.update({
+                where: { id: product.id },
+                data: updateData
             });
-            results.push({ code: newProduct.name, status: "YENİ EKLENDİ" });
+            results.push({ 
+              code: productCode, 
+              status: "✅ GÜNCELLENDİ",
+              productId: product.id,
+              changes: Object.keys(updateData).join(", ")
+            });
+        } else {
+            results.push({ 
+              code: productCode, 
+              status: "DEĞİŞİKLİK YOK",
+              productId: product.id
+            });
         }
 
       } catch (err) {
         console.error(`Hata (${productCode}):`, err.message);
-        results.push({ code: productCode, status: "HATA", error: err.message });
+        results.push({ code: productCode, status: "HATA ❌", error: err.message });
       }
     }
 
     // Temizlik
     uploadedFiles.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
 
-    res.json({ success: true, processed: results.length, details: results });
+    const successCount = results.filter(r => r.status.includes("GÜNCELLENDİ")).length;
+    const notFoundCount = results.filter(r => r.status.includes("BULUNAMADI")).length;
+    const errorCount = results.filter(r => r.status.includes("HATA")).length;
+
+    res.json({ 
+      success: true, 
+      processed: results.length,
+      summary: {
+        updated: successCount,
+        notFound: notFoundCount,
+        errors: errorCount
+      },
+      details: results 
+    });
 
   } catch (error) {
     console.error("Hata:", error);
