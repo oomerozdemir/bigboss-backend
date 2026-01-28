@@ -1,3 +1,5 @@
-productCode,mainImageName,price,stock,category
-"3360 POZDA POZ Beyaz","3360 POZDA POZ Beyaz.jpg","","","3360 POZDA POZ"
-"3360 POZDA POZ Fuşya","3360 POZDA POZ Fuşya.jpg","","","3360 POZDA POZ"
+"id","name","price","stock","description","category","mainImageName","variantImages"
+"3360 POZDA POZ,""3360 POZDA POZ Beyaz.jpg"","""","""",""3360 POZDA POZ"""
+"3360 POZDA POZ,""3360 POZDA POZ Fuşya.jpg"","""","""",""3360 POZDA POZ"""
+
+7930,"3360 POZDA POZ","4899",40,"Nebim Kod: 26Y0163360","Diğer","",""

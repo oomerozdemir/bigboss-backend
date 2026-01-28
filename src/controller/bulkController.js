@@ -37,39 +37,53 @@ const uploadToCloudinary = async (filePath) => {
   }
 };
 
-// ✅ 1. EXPORT İŞLEMİ (Varyantları da gösterir)
+// ✅ 1. EXPORT İŞLEMİ - Varyant detaylarıyla
 export const exportProductsCsv = async (req, res) => {
   try {
     const products = await prisma.product.findMany({
-      include: { variants: true, categories: { include: { mainCategory: true } } },
+      include: { 
+        variants: true, 
+        categories: { include: { mainCategory: true } } 
+      },
       orderBy: { id: 'asc' }
     });
 
-    const fields = ['id', 'name', 'price', 'stock', 'description', 'category', 'mainImageName', 'variants_summary'];
-    const opts = { fields };
-
-    const csvData = products.map(p => {
-      const catName = p.categories[0]?.name || "";
-      // Varyantları okunabilir string yap: "S (10) | M (20)"
-      const vSummary = p.variants.map(v => `${v.size} (${v.stock})`).join(" | ");
-
-      return {
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        stock: p.stock,
-        description: p.description || "",
-        category: catName,
-        mainImageName: "", 
-        variants_summary: vSummary 
-      };
+    // Her ürün için her varyantı ayrı satır olarak ekle
+    const rows = [];
+    products.forEach(product => {
+      const catName = product.categories[0]?.name || "";
+      
+      if (product.variants.length === 0) {
+        // Varyant yoksa ürün satırı ekle
+        rows.push({
+          productCode: product.name,
+          variantSize: "STD",
+          variantColor: "Standart",
+          variantImage: "",
+          variantStock: product.stock,
+          category: catName
+        });
+      } else {
+        // Her varyant için ayrı satır
+        product.variants.forEach(variant => {
+          rows.push({
+            productCode: product.name,
+            variantSize: variant.size,
+            variantColor: variant.color,
+            variantImage: "",
+            variantStock: variant.stock,
+            category: catName
+          });
+        });
+      }
     });
 
-    const parser = new Parser(opts);
-    const csv = parser.parse(csvData);
+    const fields = ['productCode', 'variantSize', 'variantColor', 'variantImage', 'variantStock', 'category'];
+    const parser = new Parser({ fields });
+    const csv = parser.parse(rows);
 
     res.header('Content-Type', 'text/csv');
-    res.attachment('urunler_export.csv');
+    res.attachment('varyantlar_export.csv');
     return res.send(csv);
 
   } catch (error) {
@@ -78,7 +92,7 @@ export const exportProductsCsv = async (req, res) => {
   }
 };
 
-// ✅ 2. IMPORT İŞLEMİ - SADECE MEVCUT ÜRÜNLERİ GÜNCELLER
+// ✅ 2. IMPORT İŞLEMİ - VARYANT BAZLI GÜNCELLEME
 export const bulkImportProducts = async (req, res) => {
   try {
     if (!req.body.data) {
@@ -89,133 +103,139 @@ export const bulkImportProducts = async (req, res) => {
     const uploadedFiles = req.files || [];
     const results = [];
 
-    console.log(`📦 ${items.length} ürün işleniyor...`);
+    console.log(`📦 ${items.length} varyant güncelleniyor...`);
 
     for (const item of items) {
-      // CSV sütun isimlerine göre kod ve resim adını al
-      const productCode = item.productCode || item.name; 
-      const imageFileName = item.mainImageName || item.imageName;
+      const productCode = item.productCode || item.name;
+      const variantSize = item.variantSize || "STD";
+      const variantColor = item.variantColor || "Standart";
+      const imageFileName = item.variantImage || item.mainImageName;
 
       try {
         if (!productCode) {
-            results.push({ code: "UNKNOWN", status: "ATLAND", error: "productCode bulunamadı" });
+            results.push({ 
+              code: "UNKNOWN", 
+              status: "ATLAND", 
+              error: "productCode bulunamadı" 
+            });
             continue;
         }
 
-        // --- ADIM 1: ÜRÜNÜ BUL (productCode ile) ---
-        let product = null;
+        // --- ADIM 1: ÜRÜNÜ BUL ---
+        let product = await prisma.product.findFirst({
+            where: {
+                OR: [
+                    { description: { contains: `Nebim Kod: ${productCode}`, mode: 'insensitive' } },
+                    { name: { equals: productCode, mode: 'insensitive' } }
+                ]
+            },
+            include: { variants: true }
+        });
 
-        // A) Önce ID varsa ona bak
-        if (item.id && item.id.toString().trim() !== "" && item.id !== "new") {
-            product = await prisma.product.findUnique({ 
-              where: { id: parseInt(item.id) },
-              include: { variants: true } 
-            });
-        }
-
-        // B) ID yoksa productCode ile ara - description içinde "Nebim Kod: XXX" formatında ara
-        if (!product && productCode) {
-            product = await prisma.product.findFirst({
-                where: {
-                    description: { contains: `Nebim Kod: ${productCode}`, mode: 'insensitive' }
-                },
-                include: { variants: true }
-            });
-        }
-
-        // C) Hala bulamadıysa name ile direkt eşleşme dene
-        if (!product && productCode) {
-            product = await prisma.product.findFirst({
-                where: {
-                    name: { equals: productCode, mode: 'insensitive' }
-                },
-                include: { variants: true }
-            });
-        }
-
-        // ❌ ÜRÜN BULUNAMADIYSA -> YENİ ÜRÜN OLUŞTURMA, SADECE UYARI VER
         if (!product) {
             results.push({ 
-              code: productCode, 
-              status: "BULUNAMADI ❌", 
-              error: "Sistemde bu kod/isimle ürün yok - önce manuel olarak eklenmeli" 
+              code: productCode,
+              variant: `${variantSize}/${variantColor}`,
+              status: "ÜRÜN BULUNAMADI ❌",
+              error: "Bu ürün sistemde yok"
             });
-            console.log(`⚠️  ATLAND: ${productCode} - Ürün bulunamadı`);
+            console.log(`⚠️  ÜRÜN YOK: ${productCode}`);
             continue;
         }
 
-        // --- ADIM 2: RESMİ YÜKLE ---
-        let mainImageUrl = null;
+        // --- ADIM 2: VARYANTI BUL ---
+        const variant = product.variants.find(v => 
+          v.size.toLowerCase() === variantSize.toLowerCase() && 
+          v.color.toLowerCase() === variantColor.toLowerCase()
+        );
+
+        if (!variant) {
+            results.push({ 
+              code: productCode,
+              variant: `${variantSize}/${variantColor}`,
+              status: "VARYANT BULUNAMADI ❌",
+              error: `Bu ürünün ${variantSize}/${variantColor} varyantı yok`
+            });
+            console.log(`⚠️  VARYANT YOK: ${productCode} - ${variantSize}/${variantColor}`);
+            continue;
+        }
+
+        // --- ADIM 3: RESMİ YÜKLE ---
+        let variantImageUrl = null;
         if (imageFileName) {
           const fileMatch = uploadedFiles.find(f => f.originalname === imageFileName.trim());
           if (fileMatch) {
-            mainImageUrl = await uploadToCloudinary(fileMatch.path);
+            variantImageUrl = await uploadToCloudinary(fileMatch.path);
             try { fs.unlinkSync(fileMatch.path); } catch(e){} 
           } else {
             console.log(`⚠️  Resim bulunamadı: ${imageFileName}`);
           }
         }
 
-        // --- ADIM 3: MEVCUT ÜRÜNÜ GÜNCELLE ---
+        // --- ADIM 4: VARYANTI GÜNCELLE ---
         const updateData = {};
         
-        // CSV'de fiyat/stok varsa güncelle
-        if (item.price && parseFloat(item.price) > 0) {
-          updateData.price = parseFloat(item.price);
-        }
-        if (item.stock && parseInt(item.stock) >= 0) {
-          updateData.stock = parseInt(item.stock);
+        if (variantImageUrl) {
+          updateData.vImageUrl = variantImageUrl;
         }
         
-        // Resim Yüklendiyse
-        if (mainImageUrl) {
-            updateData.imageUrl = mainImageUrl; // Ana resim
-            
-            // 🔥 Varyantların resimlerini de güncelle (varyantları silmeden)
-            if (product.variants && product.variants.length > 0) {
-              await prisma.productVariant.updateMany({
-                  where: { productId: product.id },
-                  data: { vImageUrl: mainImageUrl }
-              });
-            }
+        if (item.variantStock && parseInt(item.variantStock) >= 0) {
+          updateData.stock = parseInt(item.variantStock);
         }
 
-        // Kategori güncellenmesi isteniyor mu?
-        if (item.category) {
-          const catId = await findOrCreateCategory(item.category);
-          if (catId) {
-            updateData.categories = { set: [{ id: catId }] };
-          }
-        }
-
-        // Ana ürün güncelleme
         if (Object.keys(updateData).length > 0) {
+          await prisma.productVariant.update({
+            where: { id: variant.id },
+            data: updateData
+          });
+
+          // Ürünün ana resmini de güncelle (eğer variantImageUrl varsa)
+          if (variantImageUrl && !product.imageUrl) {
             await prisma.product.update({
-                where: { id: product.id },
-                data: updateData
+              where: { id: product.id },
+              data: { imageUrl: variantImageUrl }
             });
-            results.push({ 
-              code: productCode, 
-              status: "✅ GÜNCELLENDİ",
-              productId: product.id,
-              changes: Object.keys(updateData).join(", ")
-            });
+          }
+
+          // Toplam stoku yeniden hesapla
+          const allVariants = await prisma.productVariant.findMany({
+            where: { productId: product.id }
+          });
+          const totalStock = allVariants.reduce((sum, v) => sum + v.stock, 0);
+          await prisma.product.update({
+            where: { id: product.id },
+            data: { stock: totalStock }
+          });
+
+          results.push({ 
+            code: productCode,
+            variant: `${variantSize}/${variantColor}`,
+            status: "✅ GÜNCELLENDİ",
+            changes: Object.keys(updateData).join(", ")
+          });
         } else {
-            results.push({ 
-              code: productCode, 
-              status: "DEĞİŞİKLİK YOK",
-              productId: product.id
-            });
+          results.push({ 
+            code: productCode,
+            variant: `${variantSize}/${variantColor}`,
+            status: "DEĞİŞİKLİK YOK"
+          });
         }
 
       } catch (err) {
         console.error(`Hata (${productCode}):`, err.message);
-        results.push({ code: productCode, status: "HATA ❌", error: err.message });
+        results.push({ 
+          code: productCode,
+          variant: `${variantSize}/${variantColor}`,
+          status: "HATA ❌", 
+          error: err.message 
+        });
       }
     }
 
     // Temizlik
-    uploadedFiles.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
+    uploadedFiles.forEach(f => { 
+      if (fs.existsSync(f.path)) fs.unlinkSync(f.path); 
+    });
 
     const successCount = results.filter(r => r.status.includes("GÜNCELLENDİ")).length;
     const notFoundCount = results.filter(r => r.status.includes("BULUNAMADI")).length;
