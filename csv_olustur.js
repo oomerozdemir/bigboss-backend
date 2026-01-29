@@ -5,76 +5,47 @@ import path from 'path';
 const RESIM_KLASORU = "C:/Users/oomer/Desktop/Bigboss-Urunler/26-Yaz-Sezonu"; 
 const CSV_DOSYA_ADI = "beden_renk_eslestirme.csv";
 
-// ✅ YENİ YAPI: Klasör Adı = Ürün, Dosya Adı = Renk
 const headers = ["productBase", "variantSize", "variantColor", "variantImage"];
 let csvContent = headers.join(",") + "\n";
 
-/**
- * Klasör yapısını tarar.
- * @param {string} dir - Taranacak ana dizin
- */
 function scanDirectory(dir) {
+    // Ana klasörü tara
     const items = fs.readdirSync(dir);
 
     items.forEach(item => {
         const fullPath = path.join(dir, item);
         const stat = fs.statSync(fullPath);
 
+        // Eğer bu bir klasörse, klasör adını "Ürün Adı" olarak kabul et
         if (stat.isDirectory()) {
-            // Eğer bir klasörse, bu klasörün adı "Ürün Adı" (productBase) olur.
-            // Şimdi bu ürün klasörünün içindeki resimleri (renkleri) tarayalım.
-            processProductFolder(fullPath, item); 
-        }
-    });
-}
+            const productName = item; // Örn: "3360 POZDA POZ"
+            const productFiles = fs.readdirSync(fullPath);
 
-/**
- * Ürün klasörünün içindeki resimleri işler.
- * @param {string} folderPath - Ürün klasörünün tam yolu
- * @param {string} productName - Klasör adı (Ürün ismi olarak kullanılacak)
- */
-function processProductFolder(folderPath, productName) {
-    const files = fs.readdirSync(folderPath);
-
-    files.forEach(file => {
-        // Sadece resim dosyalarını al
-        if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
-            
-            // 1. Ürün Adı (productBase) -> Klasör isminden gelir (Parametre: productName)
-            const productBase = productName;
-
-            // 2. Beden (variantSize) -> İsteğin üzerine BOŞ bırakılıyor
-            const variantSize = ""; 
-
-            // 3. Renk (variantColor) -> Dosya isminden uzantı atılarak alınır (Örn: "Siyah.jpg" -> "Siyah")
-            const variantColor = path.parse(file).name;
-
-            // 4. Resim (variantImage) -> Dosyanın tam adı
-            const variantImage = file;
-
-            // CSV Satırını oluştur
-            const row = [
-                `"${productBase}"`,
-                `"${variantSize}"`,
-                `"${variantColor}"`,
-                `"${variantImage}"`
-            ];
-            
-            csvContent += row.join(",") + "\n";
-            console.log(`📸 Ürün: ${productBase} | Renk: ${variantColor} -> ${file}`);
+            productFiles.forEach(file => {
+                if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
+                    // Dosya adı renktir (Uzantısız)
+                    const color = path.parse(file).name; // Örn: "Beyaz", "Fuşya"
+                    
+                    const row = [
+                        `"${productName}"`,  // productBase
+                        `""`,                // variantSize (Boş, çünkü tüm bedenlere basılacak)
+                        `"${color}"`,        // variantColor
+                        `"${file}"`          // variantImage
+                    ];
+                    
+                    csvContent += row.join(",") + "\n";
+                    console.log(`📸 Ürün: ${productName} | Renk: ${color} -> ${file}`);
+                }
+            });
         }
     });
 }
 
 try {
-    console.log(`📂 '${RESIM_KLASORU}' taranıyor...\n`);
+    console.log("📂 Klasör taranıyor...");
     scanDirectory(RESIM_KLASORU);
-    
     fs.writeFileSync(CSV_DOSYA_ADI, csvContent, 'utf8');
-    
-    console.log(`\n✅ '${CSV_DOSYA_ADI}' başarıyla oluşturuldu!`);
-    console.log(`📊 Toplam satır sayısı: ${csvContent.split('\n').length - 2}\n`);
-    
+    console.log(`✅ '${CSV_DOSYA_ADI}' oluşturuldu!`);
 } catch (error) {
     console.error("❌ Hata:", error.message);
 }
