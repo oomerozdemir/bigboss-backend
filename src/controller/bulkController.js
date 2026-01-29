@@ -70,7 +70,6 @@ export const exportProductsCsv = async (req, res) => {
   }
 };
 
-// ✅ IMPORT - BEDEN-RENK EŞLEŞTIRME
 export const bulkImportProducts = async (req, res) => {
   try {
     if (!req.body.data) {
@@ -84,32 +83,32 @@ export const bulkImportProducts = async (req, res) => {
     console.log(`📦 ${items.length} varyant işleniyor...`);
 
     for (const item of items) {
-      const productBase = item.productBase;      // Örn: "3360 POZDA POZ"
-      const variantSize = item.variantSize?.trim();  // Örn: "36"
-      const variantColor = item.variantColor;    // Örn: "Beyaz"
+      // CSV'den gelen veriler (Scriptimizde oluşturduğumuz yapı)
+      const productBase = item.productBase?.trim(); // Klasör ismi = Ürün ismi
+      const variantSize = item.variantSize?.trim(); // Boş string
+      const variantColor = item.variantColor?.trim(); // Dosya ismi = Renk
       const imageFileName = item.variantImage || item.mainImageName;
 
       try {
         if (!productBase || !variantColor) {
             results.push({ 
               base: productBase,
-              size: variantSize || "BOŞ",
               color: variantColor,
-              status: "ATLAND", 
-              error: "Ürün tabanı veya renk eksik" 
+              status: "ATLANDI", 
+              error: "Ürün adı veya renk eksik" 
             });
             continue;
         }
 
-        // --- ADIM 1: TAM ÜRÜN ADINI OLUŞTUR ---
-        const fullProductName = `${productBase} ${variantColor}`;
-
-        // --- ADIM 2: ÜRÜNÜ BUL ---
+        // --- DÜZELTME 1: ÜRÜNÜ DOĞRU ARA ---
+        // Eski kod rengi de isme ekliyordu, bunu kaldırdık. Sadece productBase arıyoruz.
+        
         let product = await prisma.product.findFirst({
             where: {
+                // İsmi tam eşleşen VEYA Nebim kodu içinde geçen (açıklamada)
                 OR: [
-                    { description: { contains: `Nebim Kod: ${fullProductName}`, mode: 'insensitive' } },
-                    { name: { equals: fullProductName, mode: 'insensitive' } }
+                    { name: { equals: productBase, mode: 'insensitive' } }, // Büyük/küçük harf duyarsız tam eşleşme
+                    { description: { contains: `Nebim Kod: ${productBase}`, mode: 'insensitive' } }
                 ]
             },
             include: { variants: true }
@@ -118,119 +117,68 @@ export const bulkImportProducts = async (req, res) => {
         if (!product) {
             results.push({ 
               base: productBase,
-              size: variantSize || "BOŞ",
               color: variantColor,
               status: "ÜRÜN BULUNAMADI ❌",
-              error: `"${fullProductName}" adlı ürün sistemde yok`
+              error: `"${productBase}" isminde ürün veritabanında yok.`
             });
-            console.log(`⚠️  ÜRÜN YOK: ${fullProductName}`);
+            console.log(`⚠️  ÜRÜN YOK: ${productBase}`);
             continue;
         }
 
-        // --- ADIM 3: RESMİ YÜKLE ---
+        // --- ADIM 2: RESMİ BUL VE YÜKLE ---
         let variantImageUrl = null;
         if (imageFileName) {
+          // Upload edilen dosyalar arasında ismen eşleşeni bul
           const fileMatch = uploadedFiles.find(f => f.originalname === imageFileName.trim());
+          
           if (fileMatch) {
             variantImageUrl = await uploadToCloudinary(fileMatch.path);
             try { fs.unlinkSync(fileMatch.path); } catch(e){} 
           } else {
-            console.log(`⚠️  Resim bulunamadı: ${imageFileName}`);
+            console.log(`⚠️  Resim dosyası yüklenenler arasında yok: ${imageFileName}`);
           }
         }
 
         if (!variantImageUrl) {
             results.push({ 
               base: productBase,
-              size: variantSize || "BOŞ",
               color: variantColor,
-              status: "RESİM YÜKLENEMEDİ ❌",
-              error: "Resim dosyası bulunamadı"
+              status: "RESİM EKSİK ❌",
+              error: "CSV'deki resim dosyası sunucuya gelmedi."
             });
             continue;
         }
 
-        // --- ADIM 4: VARYANT(LAR)I GÜNCELLE ---
+        // --- ADIM 3: VARYANTLARI GÜNCELLE ---
         
-        if (variantSize && variantSize !== "") {
-            // 🎯 SEÇENEK A: Belirli bir BEDEN-RENK kombinasyonunu güncelle
-            
-            const variant = product.variants.find(v => 
-              v.size.toLowerCase() === variantSize.toLowerCase() &&
-              v.color.toLowerCase() === variantColor.toLowerCase()
-            );
+        // CSV'de Beden BOŞ olduğu için, o rengin TÜM bedenlerine resmi atıyoruz.
+        // Veritabanındaki renk isimleri ile Dosya isminin (variantColor) eşleşmesi gerekir.
+        
+        const matchingVariants = product.variants.filter(v => 
+          v.color.trim().toLowerCase() === variantColor.toLowerCase()
+        );
 
-            if (!variant) {
-                results.push({ 
-                  base: productBase,
-                  size: variantSize,
-                  color: variantColor,
-                  status: "VARYANT BULUNAMADI ❌",
-                  error: `${variantSize} - ${variantColor} kombinasyonu bu üründe yok`
-                });
-                console.log(`⚠️  VARYANT YOK: ${fullProductName} - ${variantSize}/${variantColor}`);
-                continue;
-            }
-
-            // Sadece bu varyantı güncelle
-            await prisma.productVariant.update({
-                where: { id: variant.id },
-                data: { vImageUrl: variantImageUrl }
-            });
-
+        if (matchingVariants.length === 0) {
             results.push({ 
               base: productBase,
-              size: variantSize,
               color: variantColor,
-              status: "✅ GÜNCELLENDİ (Tek Varyant)",
-              changes: "vImageUrl"
+              status: "RENK BULUNAMADI ❌",
+              error: `Üründe "${variantColor}" adında bir renk varyantı yok.`
             });
-
-            console.log(`✅ ${fullProductName} - ${variantSize}: Resim güncellendi`);
-
-        } else {
-            // 🎯 SEÇENEK B: Bu RENKTEKİ TÜM bedenleri güncelle
-            
-            const matchingVariants = product.variants.filter(v => 
-              v.color.toLowerCase() === variantColor.toLowerCase()
-            );
-
-            if (matchingVariants.length === 0) {
-                results.push({ 
-                  base: productBase,
-                  size: "TÜM",
-                  color: variantColor,
-                  status: "VARYANT YOK ❌",
-                  error: `${variantColor} renginde varyant yok`
-                });
-                continue;
-            }
-
-            // Bu renkteki tüm bedenleri güncelle
-            const variantIds = matchingVariants.map(v => v.id);
-            
-            await prisma.productVariant.updateMany({
-                where: { 
-                  id: { in: variantIds }
-                },
-                data: { vImageUrl: variantImageUrl }
-            });
-
-            const bedenler = matchingVariants.map(v => v.size).join(", ");
-
-            results.push({ 
-              base: productBase,
-              size: `TÜM (${matchingVariants.length})`,
-              color: variantColor,
-              bedenler: bedenler,
-              status: `✅ GÜNCELLENDİ (${matchingVariants.length} Beden)`,
-              changes: "vImageUrl"
-            });
-
-            console.log(`✅ ${fullProductName}: ${matchingVariants.length} beden güncellendi (${bedenler})`);
+            continue;
         }
 
-        // Ana ürün resmini de güncelle (eğer yoksa)
+        // Bulunan tüm varyantları güncelle (Örn: Siyah S, Siyah M, Siyah L...)
+        const variantIds = matchingVariants.map(v => v.id);
+        
+        await prisma.productVariant.updateMany({
+            where: { 
+              id: { in: variantIds }
+            },
+            data: { vImageUrl: variantImageUrl }
+        });
+
+        // Eğer ürünün ana resmi yoksa, bu resmi ana resim yap
         if (!product.imageUrl) {
             await prisma.product.update({
               where: { id: product.id },
@@ -238,13 +186,19 @@ export const bulkImportProducts = async (req, res) => {
             });
         }
 
+        results.push({ 
+            base: productBase,
+            color: variantColor,
+            bedenler: matchingVariants.map(v => v.size).join(", "),
+            status: "✅ BAŞARILI",
+            changes: `${matchingVariants.length} varyant güncellendi.`
+        });
+
       } catch (err) {
-        console.error(`Hata (${productBase} - ${variantSize || 'TÜM'} - ${variantColor}):`, err.message);
+        console.error(`Hata (${productBase}):`, err);
         results.push({ 
           base: productBase,
-          size: variantSize || "TÜM",
-          color: variantColor,
-          status: "HATA ❌", 
+          status: "SİSTEM HATASI ❌", 
           error: err.message 
         });
       }
@@ -255,23 +209,13 @@ export const bulkImportProducts = async (req, res) => {
       if (fs.existsSync(f.path)) fs.unlinkSync(f.path); 
     });
 
-    const successCount = results.filter(r => r.status.includes("GÜNCELLENDİ")).length;
-    const notFoundCount = results.filter(r => r.status.includes("BULUNAMADI")).length;
-    const errorCount = results.filter(r => r.status.includes("HATA") || r.status.includes("YÜKLENEMEDİ")).length;
-
     res.json({ 
       success: true, 
-      processed: results.length,
-      summary: {
-        updated: successCount,
-        notFound: notFoundCount,
-        errors: errorCount
-      },
-      details: results 
+      results: results 
     });
 
   } catch (error) {
-    console.error("Hata:", error);
+    console.error("Genel Hata:", error);
     res.status(500).json({ error: "İşlem başarısız." });
   }
 };
