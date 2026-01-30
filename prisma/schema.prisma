@@ -82,6 +82,7 @@ model ProductVariant {
   color     String  @default("Standart")
   stock     Int     // O bedene ait stok
   vImageUrl String?
+  vImageUrls String[] @default([])
 
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   productId Int

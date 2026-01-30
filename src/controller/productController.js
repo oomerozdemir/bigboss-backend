@@ -132,7 +132,6 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// --- YENİ ÜRÜN EKLE ---
 export const createProduct = async (req, res) => {
   try {
     const { 
@@ -157,14 +156,23 @@ export const createProduct = async (req, res) => {
 
     // Varyant resimleri
     const variantPromises = parsedVariants.map(async (variant, index) => {
-      const variantFile = filesArray.find(f => f.fieldname === `variantImage_${index}`);
-      const vUrl = variantFile ? await uploadToCloudinary(variantFile.path) : null;
+      // Frontend'den "variantImage_0", "variantImage_0" şeklinde çoklu dosya gelebilir.
+      // Filter ile o indexe ait TÜM dosyaları buluyoruz.
+      const variantFiles = filesArray.filter(f => f.fieldname === `variantImage_${index}`);
+      
+      let uploadedUrls = [];
+      if (variantFiles.length > 0) {
+          // Hepsini Cloudinary'ye yükle
+          uploadedUrls = await Promise.all(variantFiles.map(f => uploadToCloudinary(f.path)));
+      }
 
       return {
         size: variant.size,
         color: variant.color || "Standart",
         stock: parseInt(variant.stock) || 0,
-        vImageUrl: vUrl
+        // İlk resmi ana resim (thumbnail) yap, hepsini listeye ekle
+        vImageUrl: uploadedUrls.length > 0 ? uploadedUrls[0] : null,
+        vImageUrls: uploadedUrls 
       };
     });
 
@@ -215,20 +223,6 @@ export const createProduct = async (req, res) => {
   }
 };
 
-// --- ÜRÜN SİL ---
-export const deleteProduct = async (req, res) => {
-  const { id } = req.params;
-  try {
-    await prisma.product.delete({
-      where: { id: parseInt(id) }
-    });
-    res.json({ message: "Ürün başarıyla silindi." });
-  } catch (error) {
-    console.error("deleteProduct Error:", error);
-    res.status(500).json({ error: "Ürün silinemedi." });
-  }
-};
-
 // --- ÜRÜN GÜNCELLE ---
 export const updateProduct = async (req, res) => {
   const { id } = req.params;
@@ -254,20 +248,32 @@ export const updateProduct = async (req, res) => {
     let parsedVariants = variants ? (Array.isArray(variants) ? variants : JSON.parse(variants)) : [];
     let parsedDetails = productDetails ? (Array.isArray(productDetails) ? productDetails : JSON.parse(productDetails)) : [];
 
+    // ✅ VARYANT GÜNCELLEME (Hata düzeltildi ve çoklu resim eklendi)
     const variantsWithImages = await Promise.all(parsedVariants.map(async (variant, index) => {
-        const variantFile = filesArray.find(f => f.fieldname === `variantImage_${index}`);
+        const variantFiles = filesArray.filter(f => f.fieldname === `variantImage_${index}`);
         
-        let vUrl = variant.vImageUrl || null;
-        
-        if (variantFile) {
-          vUrl = await uploadToCloudinary(variantFile.path);
+        // 1. Mevcut Resimler (Frontend'den silinmeyenler gelir)
+        let existingUrls = variant.vImageUrls || [];
+        // Eğer string geldiyse (eski yapıdan kalma) array yap
+        if (typeof existingUrls === 'string') existingUrls = [existingUrls];
+        if (!Array.isArray(existingUrls)) existingUrls = [];
+
+        // 2. Yeni Yüklenen Resimler
+        let newUploadedUrls = [];
+        if (variantFiles.length > 0) {
+          newUploadedUrls = await Promise.all(variantFiles.map(f => uploadToCloudinary(f.path)));
         }
   
+        // 3. Birleştir
+        const finalUrls = [...existingUrls, ...newUploadedUrls];
+
         return {
           size: variant.size,
           color: variant.color || "Standart",
           stock: parseInt(variant.stock),
-          vImageUrl: vUrl
+          // Liste doluysa ilki thumbnail, yoksa null
+          vImageUrl: finalUrls.length > 0 ? finalUrls[0] : null,
+          vImageUrls: finalUrls
         };
       }));
 
@@ -314,6 +320,27 @@ export const updateProduct = async (req, res) => {
     res.status(500).json({ error: "Güncellenemedi: " + error.message });
   }
 };
+
+
+
+
+
+
+// --- ÜRÜN SİL ---
+export const deleteProduct = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await prisma.product.delete({
+      where: { id: parseInt(id) }
+    });
+    res.json({ message: "Ürün başarıyla silindi." });
+  } catch (error) {
+    console.error("deleteProduct Error:", error);
+    res.status(500).json({ error: "Ürün silinemedi." });
+  }
+};
+
+
 
 // --- TOPLU SİLME ---
 export const deleteProductsBulk = async (req, res) => {
