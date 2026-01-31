@@ -159,7 +159,7 @@ export const sendOrderConfirmationEmail = async (order, user) => {
                       <table width="100%" cellpadding="0" cellspacing="0">
                         <tr>
                           <td align="center" style="padding: 20px 0;">
-                            <a href="${process.env.FRONTEND_URL}/siparislerim" 
+                            <a href="${process.env.FRONTEND_URL}/hesabim" 
                                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                                       color: #ffffff; 
                                       padding: 15px 40px; 
@@ -183,10 +183,10 @@ export const sendOrderConfirmationEmail = async (order, user) => {
                         Sorularınız için bizimle iletişime geçebilirsiniz:
                       </p>
                       <p style="margin: 0 0 5px 0; color: #667eea; font-size: 14px;">
-                        <strong>📧 info@bigboss.com.tr</strong>
+                        <strong>📧 bigbosstextil1972@gmail.com</strong>
                       </p>
                       <p style="margin: 0 0 20px 0; color: #667eea; font-size: 14px;">
-                        <strong>📞 0850 123 45 67</strong>
+                        <strong>📞 530 774 99 86</strong>
                       </p>
                       <p style="margin: 20px 0 0 0; color: #999; font-size: 12px;">
                         © ${new Date().getFullYear()} Big Boss. Tüm hakları saklıdır.
@@ -329,7 +329,7 @@ export const sendOrderShippedEmail = async (order, user, trackingNumber = null) 
                                 🔍 Kargom Nerede?
                               </a>
                             ` : ''}
-                            <a href="${process.env.FRONTEND_URL}/siparislerim" 
+                            <a href="${process.env.FRONTEND_URL}/hesabim" 
                                style="background-color: #667eea; 
                                       color: #ffffff; 
                                       padding: 15px 30px; 
@@ -474,7 +474,7 @@ export const sendOrderDeliveredEmail = async (order, user) => {
                         <p style="margin: 0 0 20px 0; color: #8b4513; font-size: 14px;">
                           Memnuniyetiniz bizim için çok önemli! Ürünlerimiz hakkında görüşlerinizi paylaşır mısınız?
                         </p>
-                        <a href="${process.env.FRONTEND_URL}/siparislerim" 
+                        <a href="${process.env.FRONTEND_URL}/hesabim" 
                            style="background-color: #8b4513; 
                                   color: #ffffff; 
                                   padding: 12px 30px; 
@@ -531,10 +531,10 @@ export const sendOrderDeliveredEmail = async (order, user) => {
                         Bizi Seçtiğiniz İçin Teşekkürler! ❤️
                       </p>
                       <p style="margin: 0 0 5px 0; color: #667eea; font-size: 14px;">
-                        <strong>📧 info@bigboss.com.tr</strong>
+                        <strong>📧 bigbosstextil1972@gmail.com</strong>
                       </p>
                       <p style="margin: 0 0 20px 0; color: #667eea; font-size: 14px;">
-                        <strong>📞 0850 123 45 67</strong>
+                        <strong>📞 530 774 99 86</strong>
                       </p>
                       
                       <!-- Sosyal Medya -->
