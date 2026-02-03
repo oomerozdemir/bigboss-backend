@@ -10,7 +10,7 @@ const PAYTR_CONFIG = {
   merchant_id: process.env.PAYTR_MERCHANT_ID,
   merchant_key: process.env.PAYTR_MERCHANT_KEY,
   merchant_salt: process.env.PAYTR_MERCHANT_SALT,
-  test_mode: process.env.PAYTR_TEST_MODE === 'false' ? '1' : '0',
+  test_mode: process.env.PAYTR_TEST_MODE === 'true' ? '1' : '0',
   iframe_base_url: 'https://www.paytr.com/odeme/guvenli/', 
 };
 
