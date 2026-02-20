@@ -23,6 +23,10 @@ export const toggleFavorite = async (req, res) => {
       await prisma.favorite.delete({
         where: { id: existingFavorite.id },
       });
+      await prisma.product.update({
+        where: { id: parseInt(productId) },
+        data: { favoriteCount: { decrement: 1 } }
+      });
       res.json({ message: "Favorilerden çıkarıldı", isFavorited: false });
     } else {
       // Yoksa EKLE
@@ -31,6 +35,10 @@ export const toggleFavorite = async (req, res) => {
           userId: userId,
           productId: parseInt(productId),
         },
+      });
+      await prisma.product.update({
+        where: { id: parseInt(productId) },
+        data: { favoriteCount: { increment: 1 } }
       });
       res.json({ message: "Favorilere eklendi", isFavorited: true });
     }

@@ -53,15 +53,15 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: "Şifre hatalı!" });
     }
 
-    // 3. Token oluştur (7 gün)
+    // 3. Token oluştur (30 gün)
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
-        isAdmin: user.isAdmin 
-      }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "7d" } // ✅ 7 GÜN
+      {
+        id: user.id,
+        email: user.email,
+        isAdmin: user.isAdmin
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
     );
 
     // 4. Cevabı gönder
@@ -100,16 +100,16 @@ export const adminLogin = async (req, res) => {
       return res.status(401).json({ error: "Hatalı şifre!" });
     }
 
-    // 3. ✅ Token süresi 7 güne çıkarıldı (eski: 2h)
+    // 3. Token oluştur (30 gün)
     const token = jwt.sign(
-      { 
-        id: admin.id, 
-        username: admin.username, 
-        isAdmin: true, // ✅ isAdmin eklendi (middleware ile uyumlu)
-        role: "admin" 
-      }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "7d" } // ✅ 2 SAAT → 7 GÜN
+      {
+        id: admin.id,
+        username: admin.username,
+        isAdmin: true,
+        role: "admin"
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
     );
 
     res.json({

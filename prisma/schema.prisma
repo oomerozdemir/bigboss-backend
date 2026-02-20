@@ -52,6 +52,10 @@ model Product {
   // ✅ YENİ: DETAYLI BİLGİLER
   productDetails ProductDetail[]
   
+  viewCount     Int      @default(0)  // Kaç kişi ürünü görüntüledi
+  favoriteCount Int      @default(0)  // Kaç kişi favorilere ekledi
+  cartAddCount  Int      @default(0)  // Kaç kişi sepete ekledi
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   variants    ProductVariant[]

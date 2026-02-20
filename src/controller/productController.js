@@ -132,6 +132,36 @@ export const getProductById = async (req, res) => {
   }
 };
 
+// --- GÖRÜNTÜLENME SAYACINI ARTIR (Herkese açık) ---
+export const incrementViewCount = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) return res.status(400).json({ error: "Geçersiz ID" });
+  try {
+    await prisma.product.update({
+      where: { id: parseInt(id) },
+      data: { viewCount: { increment: 1 } }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Görüntülenme sayısı güncellenemedi." });
+  }
+};
+
+// --- SEPETE EKLEME SAYACINI ARTIR (Herkese açık) ---
+export const incrementCartCount = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) return res.status(400).json({ error: "Geçersiz ID" });
+  try {
+    await prisma.product.update({
+      where: { id: parseInt(id) },
+      data: { cartAddCount: { increment: 1 } }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Sepet sayısı güncellenemedi." });
+  }
+};
+
 export const createProduct = async (req, res) => {
   try {
     const { 

@@ -1,15 +1,17 @@
 import { Router } from 'express';
-import { 
-    getAllProducts, 
-    createProduct, 
-    deleteProduct, 
-    updateProduct, 
-    getProductById, 
-    deleteProductsBulk, 
-    addProductsToCategoryBulk, 
-    updateProductStatus, 
-    bulkUpdateProducts, 
-    getBulkProducts
+import {
+    getAllProducts,
+    createProduct,
+    deleteProduct,
+    updateProduct,
+    getProductById,
+    deleteProductsBulk,
+    addProductsToCategoryBulk,
+    updateProductStatus,
+    bulkUpdateProducts,
+    getBulkProducts,
+    incrementViewCount,
+    incrementCartCount
 } from '../controller/productController.js';
 import { protectAdmin, protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
@@ -30,6 +32,10 @@ router.post('/', protect, protectAdmin, upload.any(), createProduct);
 
 // Detay
 router.get('/:id', getProductById);
+
+// İstatistik Sayaçları (herkese açık, fire-and-forget)
+router.post('/:id/view', incrementViewCount);
+router.post('/:id/cart-add', incrementCartCount);
 
 // ✅ ÜRÜN GÜNCELLEME - upload.any() kullan (tutarlılık için)
 router.put('/:id', protect, protectAdmin, upload.any(), updateProduct);
