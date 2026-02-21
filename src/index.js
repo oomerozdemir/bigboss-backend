@@ -5,16 +5,18 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import hpp from 'hpp';
 
-import productRoutes from './routes/productRoutes.js'; 
+import productRoutes from './routes/productRoutes.js';
 import authRoutes from "./routes/authRoutes.js"
 import categoryRoutes from "./routes/categoryRoutes.js";
 import favoriteRoutes from "./routes/favoriteRoutes.js"
 import addressRoutes from "./routes/addressRoutes.js"
 import orderRoutes from './routes/orderRoutes.js';
-import returnRoutes from './routes/returnRoutes.js'; 
+import returnRoutes from './routes/returnRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
 import paytrRoutes from "./routes/paytrRoutes.js";
 import bulkRoutes from "./routes/bulkRoutes.js"
+import cartRoutes from "./routes/cartRoutes.js";
+import { sendAbandonedCartReminders } from './controller/cartController.js';
 
 dotenv.config(); 
 
@@ -107,6 +109,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/returns', returnRoutes); 
 app.use('/api/coupons', couponRoutes);
 app.use('/api/bulk', bulkRoutes);
+app.use('/api/cart', cartRoutes);
 
 // Ana Dizin Testi
 app.get('/', (req, res) => {
@@ -149,4 +152,12 @@ app.listen(PORT, () => {
   console.log(`🚀 Sunucu ${PORT} portunda çalışıyor...`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`✅ Trust Proxy: Aktif`);
+
+  // Terk edilmiş sepet hatırlatma job'ı (her 1 saatte bir çalışır)
+  const CART_CHECK_INTERVAL = 60 * 60 * 1000; // 1 saat
+  setInterval(async () => {
+    console.log('⏰ Terk edilmiş sepet kontrolü başlıyor...');
+    await sendAbandonedCartReminders();
+  }, CART_CHECK_INTERVAL);
+  console.log('⏰ Terk edilmiş sepet hatırlatma job\'ı başlatıldı (her 1 saatte bir).');
 });

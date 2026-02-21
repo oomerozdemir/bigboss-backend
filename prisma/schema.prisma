@@ -111,6 +111,16 @@ model User {
   addresses Address[]
   orders    Order[]
   payments  Payment[]
+  cart      Cart?
+}
+
+model Cart {
+  id             Int       @id @default(autoincrement())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int       @unique
+  items          Json      @default("[]") // Sepet ürünleri JSON olarak saklanır
+  updatedAt      DateTime  @updatedAt
+  reminderSentAt DateTime? // Son hatırlatma e-postası gönderilme tarihi
 }
 
 model Favorite {

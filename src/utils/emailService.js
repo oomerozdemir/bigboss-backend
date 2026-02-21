@@ -630,9 +630,173 @@ export const sendOrderCancelledEmail = async (order, user, reason = '') => {
   }
 };
 
+// ✅ 5. TERK EDİLMİŞ SEPET HATIRLATMA E-POSTASI
+export const sendAbandonedCartEmail = async (user, cartItems) => {
+  try {
+    const transporter = createTransporter();
+
+    const itemsHtml = cartItems.map(item => `
+      <tr>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #eee;">
+          ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" style="width:50px;height:50px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:10px;">` : ''}
+          <strong style="vertical-align:middle;">${item.name}</strong>
+          ${item.selectedVariant ? `<br><small style="color:#888;">${item.selectedVariant.size || ''} ${item.selectedVariant.color ? '/ ' + item.selectedVariant.color : ''}</small>` : ''}
+        </td>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #eee; text-align: center; color: #555;">
+          ${item.quantity} adet
+        </td>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #667eea;">
+          ${(parseFloat(item.price) * item.quantity).toFixed(2)} TL
+        </td>
+      </tr>
+    `).join('');
+
+    const totalPrice = cartItems.reduce((acc, item) => acc + parseFloat(item.price) * item.quantity, 0).toFixed(2);
+
+    const mailOptions = {
+      from: {
+        name: 'Big Boss',
+        address: process.env.EMAIL_USER
+      },
+      to: user.email,
+      subject: `🛒 Sepetinizde ürünler bekliyor!`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+            <tr>
+              <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+
+                  <!-- Header -->
+                  <tr>
+                    <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+                      <div style="font-size: 50px; margin-bottom: 10px;">🛒</div>
+                      <h1 style="color: #ffffff; margin: 0; font-size: 26px;">Sepetiniz Sizi Bekliyor!</h1>
+                      <p style="color: #e0d7ff; margin: 10px 0 0 0; font-size: 15px;">Ürünleriniz hâlâ sepetinizde</p>
+                    </td>
+                  </tr>
+
+                  <!-- İçerik -->
+                  <tr>
+                    <td style="padding: 40px 30px;">
+                      <p style="font-size: 16px; color: #333; margin: 0 0 10px 0;">
+                        Merhaba <strong>${user.name}</strong>,
+                      </p>
+                      <p style="font-size: 14px; color: #666; line-height: 1.7; margin: 0 0 30px 0;">
+                        Sepetinizde bıraktığınız ürünleri unutmayın! Stoklar sınırlı olabilir,
+                        alışverişinizi tamamlamak için şimdi harekete geçin.
+                      </p>
+
+                      <!-- Ürünler -->
+                      <h3 style="margin: 0 0 15px 0; color: #333; font-size: 17px;">📦 Sepetinizdeki Ürünler</h3>
+                      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+                        <thead>
+                          <tr style="background-color: #f8f9fa;">
+                            <th style="padding: 12px 10px; text-align: left; font-size: 12px; color: #666; font-weight: 600;">ÜRÜN</th>
+                            <th style="padding: 12px 10px; text-align: center; font-size: 12px; color: #666; font-weight: 600;">ADET</th>
+                            <th style="padding: 12px 10px; text-align: right; font-size: 12px; color: #666; font-weight: 600;">TUTAR</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${itemsHtml}
+                        </tbody>
+                      </table>
+
+                      <!-- Toplam -->
+                      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 30px;">
+                        <tr>
+                          <td style="text-align: right; padding: 5px; font-size: 16px; font-weight: bold; color: #333;">
+                            Tahmini Toplam:
+                          </td>
+                          <td style="text-align: right; padding: 5px; width: 130px; font-size: 18px; font-weight: bold; color: #667eea;">
+                            ${totalPrice} TL
+                          </td>
+                        </tr>
+                      </table>
+
+                      <!-- CTA Butonu -->
+                      <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                          <td align="center" style="padding: 10px 0 30px 0;">
+                            <a href="${process.env.FRONTEND_URL}/cart"
+                               style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                      color: #ffffff;
+                                      padding: 16px 45px;
+                                      text-decoration: none;
+                                      border-radius: 30px;
+                                      font-weight: bold;
+                                      display: inline-block;
+                                      font-size: 16px;
+                                      letter-spacing: 0.5px;">
+                              Alışverişi Tamamla →
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <!-- Güven Unsurları -->
+                      <div style="background-color: #f0f4ff; border-radius: 8px; padding: 20px; text-align: center;">
+                        <table width="100%" cellpadding="10" cellspacing="0">
+                          <tr>
+                            <td style="text-align: center; font-size: 13px; color: #555;">
+                              🚚 <strong>2000 TL üzeri</strong><br>ücretsiz kargo
+                            </td>
+                            <td style="text-align: center; font-size: 13px; color: #555;">
+                              🔒 <strong>Güvenli</strong><br>ödeme
+                            </td>
+                            <td style="text-align: center; font-size: 13px; color: #555;">
+                              ↩️ <strong>Kolay</strong><br>iade
+                            </td>
+                          </tr>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Footer -->
+                  <tr>
+                    <td style="background-color: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #eee;">
+                      <p style="margin: 0 0 5px 0; color: #667eea; font-size: 14px;">
+                        <strong>📧 bigbosstextil1972@gmail.com</strong>
+                      </p>
+                      <p style="margin: 0 0 15px 0; color: #667eea; font-size: 14px;">
+                        <strong>📞 530 774 99 86</strong>
+                      </p>
+                      <p style="margin: 0; color: #aaa; font-size: 11px;">
+                        © ${new Date().getFullYear()} Big Boss. Tüm hakları saklıdır.<br>
+                        Bu e-postayı almak istemiyorsanız hesabınızdan bildirim tercihlerinizi güncelleyebilirsiniz.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Terk Edilmiş Sepet E-postası Gönderildi: ${user.email} - ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+
+  } catch (error) {
+    console.error('❌ Terk Edilmiş Sepet E-postası Hatası:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 export default {
   sendOrderConfirmationEmail,
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
-  sendOrderCancelledEmail
+  sendOrderCancelledEmail,
+  sendAbandonedCartEmail
 };
