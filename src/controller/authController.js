@@ -14,14 +14,11 @@ export const getAllUsers = async (req, res) => {
         name: true,
         email: true,
         createdAt: true,
-        _count: {
-          select: { orders: true }
-        },
         orders: {
-          select: { totalAmount: true },
-        }
+          select: { total: true },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
     const usersWithStats = users.map(u => ({
@@ -29,8 +26,8 @@ export const getAllUsers = async (req, res) => {
       name: u.name,
       email: u.email,
       createdAt: u.createdAt,
-      orderCount: u._count.orders,
-      totalSpent: u.orders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0),
+      orderCount: u.orders.length,
+      totalSpent: u.orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0),
     }));
 
     res.json({ users: usersWithStats, total: usersWithStats.length });
