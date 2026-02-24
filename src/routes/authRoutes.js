@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { register, login, adminLogin } from '../controller/authController.js';
+import { register, login, adminLogin, getAllUsers } from '../controller/authController.js';
+import { protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
@@ -10,5 +11,8 @@ router.post('/register', register);
 router.post('/login', login);
 
 router.post('/admin-login', adminLogin);
+
+// Tüm kullanıcılar (Admin): GET /api/auth/users
+router.get('/users', protectAdmin, getAllUsers);
 
 export default router;

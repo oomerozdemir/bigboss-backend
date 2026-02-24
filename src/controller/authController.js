@@ -4,6 +4,42 @@ import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
 
+// --- TÜM KULLANICILARI GETİR (ADMIN) ---
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isAdmin: false },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        _count: {
+          select: { orders: true }
+        },
+        orders: {
+          select: { totalAmount: true },
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const usersWithStats = users.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      createdAt: u.createdAt,
+      orderCount: u._count.orders,
+      totalSpent: u.orders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0),
+    }));
+
+    res.json({ users: usersWithStats, total: usersWithStats.length });
+  } catch (error) {
+    console.error("getAllUsers Hatası:", error);
+    res.status(500).json({ error: "Kullanıcılar getirilemedi." });
+  }
+};
+
 // --- KAYIT OL (REGISTER) ---
 export const register = async (req, res) => {
   const { name, email, password } = req.body;
