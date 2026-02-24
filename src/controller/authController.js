@@ -17,18 +17,33 @@ export const getAllUsers = async (req, res) => {
         orders: {
           select: { total: true },
         },
+        favorites: {
+          select: { id: true },
+        },
+        cart: {
+          select: { items: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const usersWithStats = users.map(u => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      createdAt: u.createdAt,
-      orderCount: u.orders.length,
-      totalSpent: u.orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0),
-    }));
+    const usersWithStats = users.map(u => {
+      let cartItemCount = 0;
+      if (u.cart?.items) {
+        const items = Array.isArray(u.cart.items) ? u.cart.items : [];
+        cartItemCount = items.length;
+      }
+      return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        createdAt: u.createdAt,
+        orderCount: u.orders.length,
+        totalSpent: u.orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0),
+        favoriteCount: u.favorites.length,
+        cartItemCount,
+      };
+    });
 
     res.json({ users: usersWithStats, total: usersWithStats.length });
   } catch (error) {
