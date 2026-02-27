@@ -62,6 +62,7 @@ model Product {
   favoritedBy Favorite[]
   orderItems  OrderItem[]
   isActive    Boolean  @default(true)
+  reviews     Review[]
 }
 
 model ProductDetail {
@@ -112,6 +113,7 @@ model User {
   orders    Order[]
   payments  Payment[]
   cart      Cart?
+  reviews   Review[]
 }
 
 model Cart {
@@ -262,6 +264,26 @@ enum PaymentStatus {
   FAILED       // Başarısız
   CANCELLED    // İptal edildi
   REFUNDED     // İade edildi
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId Int
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  rating    Int      // 1-5 yıldız
+  comment   String   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId]) // Kullanıcı aynı ürüne 2 kere yorum yapmasın
+  @@index([productId])
+  @@index([userId])
 }
 
 model Payment {
