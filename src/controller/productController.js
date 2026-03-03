@@ -53,24 +53,34 @@ const uploadToCloudinary = async (filePath) => {
 // --- TÜM ÜRÜNLERİ GETİR---
 export const getAllProducts = async (req, res) => {
   try {
-    const { isAdmin, page = 1, limit = 20, search = "", isFeatured } = req.query;
+    const { isAdmin, page = 1, limit = 20, search = "", isFeatured, sortBy, sortDir, statusFilter } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const whereClause = {
-        AND: [
-            isAdmin === 'true' ? {} : { isActive: true },
-            isFeatured === 'true' ? { isFeatured: true } : {}, 
-            search ? {
-                OR: [
-                    { name: { contains: search, mode: 'insensitive' } },
-                    { description: { contains: search, mode: 'insensitive' } }
-                ]
-            } : {}
-        ]
-    };
+    const allowedSortFields = ['viewCount', 'favoriteCount', 'cartAddCount', 'createdAt'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDirection = sortDir === 'asc' ? 'asc' : 'desc';
+
+    // Dinamik where clause — sadece gerçek koşulları ekle
+    const whereClause = {};
+
+    if (isAdmin === 'true') {
+        if (statusFilter === 'active')   whereClause.isActive = true;
+        if (statusFilter === 'inactive') whereClause.isActive = false;
+    } else {
+        whereClause.isActive = true;
+    }
+
+    if (isFeatured === 'true') whereClause.isFeatured = true;
+
+    if (search) {
+        whereClause.OR = [
+            { name:        { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+        ];
+    }
 
     const totalCount = await prisma.product.count({ where: whereClause });
 
@@ -81,7 +91,7 @@ export const getAllProducts = async (req, res) => {
         variants: true,
         productDetails: true
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [sortField]: sortDirection },
       skip: skip,
       take: limitNum
     });
