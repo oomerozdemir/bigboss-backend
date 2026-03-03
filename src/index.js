@@ -17,6 +17,7 @@ import paytrRoutes from "./routes/paytrRoutes.js";
 import bulkRoutes from "./routes/bulkRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import heroRoutes from "./routes/heroRoutes.js";
 import { sendAbandonedCartReminders } from './controller/cartController.js';
 
 dotenv.config(); 
@@ -112,6 +113,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/hero', heroRoutes);
 
 // Ana Dizin Testi
 app.get('/', (req, res) => {

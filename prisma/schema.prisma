@@ -315,3 +315,25 @@ model Payment {
   @@index([userId])
   @@index([status])
 }
+
+// --- HERO & DİNAMİK İÇERİK ---
+
+model HeroSlide {
+  id          Int      @id @default(autoincrement())
+  title       String
+  subtitle    String?
+  imageUrl    String
+  buttonText  String?
+  buttonLink  String   @default("/products")
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SiteContent {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
