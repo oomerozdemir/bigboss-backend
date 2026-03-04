@@ -82,9 +82,12 @@ export const getAllProducts = async (req, res) => {
         ];
     }
 
+    // Flash sale filtresi
+    if (statusFilter === 'flash') whereClause.isFlashSale = true;
+
     const totalCount = await prisma.product.count({ where: whereClause });
 
-    const products = await prisma.product.findMany({
+    const rawProducts = await prisma.product.findMany({
       where: whereClause,
       include: {
         categories: { include: { mainCategory: true } },
@@ -94,6 +97,17 @@ export const getAllProducts = async (req, res) => {
       orderBy: { [sortField]: sortDirection },
       skip: skip,
       take: limitNum
+    });
+
+    // Tarihe göre isOnSale hesapla
+    const now = new Date();
+    const products = rawProducts.map(p => {
+      let effectiveIsOnSale = p.isOnSale;
+      if (effectiveIsOnSale) {
+        if (p.saleStartDate && now < p.saleStartDate) effectiveIsOnSale = false;
+        if (p.saleEndDate   && now > p.saleEndDate)   effectiveIsOnSale = false;
+      }
+      return { ...p, isOnSale: effectiveIsOnSale };
     });
 
     res.json({
@@ -266,9 +280,10 @@ export const createProduct = async (req, res) => {
 // --- ÜRÜN GÜNCELLE ---
 export const updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { 
-    name, description, price, 
+  const {
+    name, description, price,
     discountPrice, isOnSale,
+    saleStartDate, saleEndDate, isFlashSale,
     isFeatured, categoryIds, imageUrl, variants,
     productDetails
   } = req.body;
@@ -319,8 +334,11 @@ export const updateProduct = async (req, res) => {
 
     const totalStock = variantsWithImages.reduce((acc, item) => acc + item.stock, 0);
 
-    const finalDiscountPrice = isOnSale === 'true' && discountPrice ? parseFloat(discountPrice) : null;
     const finalIsOnSale = isOnSale === 'true';
+    const finalDiscountPrice = finalIsOnSale && discountPrice ? parseFloat(discountPrice) : null;
+    const finalIsFlashSale = isFlashSale === 'true';
+    const finalSaleStartDate = saleStartDate ? new Date(saleStartDate) : null;
+    const finalSaleEndDate   = saleEndDate   ? new Date(saleEndDate)   : null;
 
     const updatedProduct = await prisma.product.update({
       where: { id: parseInt(id) },
@@ -330,6 +348,9 @@ export const updateProduct = async (req, res) => {
         price: parseFloat(price),
         discountPrice: finalDiscountPrice,
         isOnSale: finalIsOnSale,
+        saleStartDate: finalSaleStartDate,
+        saleEndDate: finalSaleEndDate,
+        isFlashSale: finalIsFlashSale,
         stock: totalStock,
         imageUrl: finalImageUrl,
         isFeatured: isFeatured === 'true',
@@ -365,6 +386,24 @@ export const updateProduct = async (req, res) => {
 
 
 
+
+// --- FLASH SALE TOGGLE ---
+export const toggleFlashSale = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) return res.status(400).json({ error: "Geçersiz ID" });
+  try {
+    const product = await prisma.product.findUnique({ where: { id: parseInt(id) }, select: { isFlashSale: true } });
+    if (!product) return res.status(404).json({ error: "Ürün bulunamadı." });
+
+    const updated = await prisma.product.update({
+      where: { id: parseInt(id) },
+      data: { isFlashSale: !product.isFlashSale }
+    });
+    res.json({ success: true, isFlashSale: updated.isFlashSale });
+  } catch (error) {
+    res.status(500).json({ error: "Flash sale durumu güncellenemedi." });
+  }
+};
 
 // --- ÜRÜN SİL ---
 export const deleteProduct = async (req, res) => {

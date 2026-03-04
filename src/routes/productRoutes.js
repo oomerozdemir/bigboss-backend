@@ -11,7 +11,8 @@ import {
     bulkUpdateProducts,
     getBulkProducts,
     incrementViewCount,
-    incrementCartCount
+    incrementCartCount,
+    toggleFlashSale
 } from '../controller/productController.js';
 import { protectAdmin, protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
@@ -45,5 +46,8 @@ router.delete('/:id', protectAdmin, deleteProduct);
 
 // Durum Güncelleme
 router.patch('/:id/status', protectAdmin, updateProductStatus);
+
+// Flash Sale Toggle
+router.patch('/:id/toggle-flash-sale', protect, protectAdmin, toggleFlashSale);
 
 export default router;
