@@ -38,23 +38,23 @@ model Product {
   name        String
   description String?
   price       Decimal  @db.Decimal(10, 2)
-  
+
   // ✅ YENİ: İNDİRİM SİSTEMİ
   discountPrice  Decimal?  @db.Decimal(10, 2) // İndirimli fiyat (varsa)
   isOnSale       Boolean   @default(false)    // İndirimde mi?
   saleStartDate  DateTime?                    // İndirim başlangıç tarihi
   saleEndDate    DateTime?                    // İndirim bitiş tarihi
   isFlashSale    Boolean   @default(false)    // Flash sale mı?
-  
+
   stock       Int      @default(0)
-  imageUrl    String?  
+  imageUrl    String?
   isFeatured  Boolean  @default(false)
-  
-  categories  SubCategory[] 
+
+  categories  SubCategory[]
 
   // ✅ YENİ: DETAYLI BİLGİLER
   productDetails ProductDetail[]
-  
+
   viewCount     Int      @default(0)  // Kaç kişi ürünü görüntüledi
   favoriteCount Int      @default(0)  // Kaç kişi favorilere ekledi
   cartAddCount  Int      @default(0)  // Kaç kişi sepete ekledi
@@ -66,6 +66,25 @@ model Product {
   orderItems  OrderItem[]
   isActive    Boolean  @default(true)
   reviews     Review[]
+
+  // ✅ KOMBİN ÖNERİSİ
+  combinationsAsSource ProductCombination[] @relation("CombinationSource")
+  combinationsAsTarget ProductCombination[] @relation("CombinationTarget")
+}
+
+// Kombin Önerisi: İki ürün arasındaki eşleşme
+model ProductCombination {
+  id                Int     @id @default(autoincrement())
+  productId         Int
+  product           Product @relation("CombinationSource", fields: [productId], references: [id], onDelete: Cascade)
+  combinedProductId Int
+  combinedProduct   Product @relation("CombinationTarget", fields: [combinedProductId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, combinedProductId])
+  @@index([productId])
+  @@index([combinedProductId])
 }
 
 model ProductDetail {

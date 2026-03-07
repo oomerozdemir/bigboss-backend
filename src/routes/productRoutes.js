@@ -14,6 +14,7 @@ import {
     incrementCartCount,
     toggleFlashSale
 } from '../controller/productController.js';
+import { getCombinations, addCombination, removeCombination } from '../controller/combinationController.js';
 import { protectAdmin, protect } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
 
@@ -49,5 +50,10 @@ router.patch('/:id/status', protectAdmin, updateProductStatus);
 
 // Flash Sale Toggle
 router.patch('/:id/toggle-flash-sale', protect, protectAdmin, toggleFlashSale);
+
+// Kombin Önerisi
+router.get('/:id/combinations', getCombinations);
+router.post('/:id/combinations', protect, protectAdmin, addCombination);
+router.delete('/:id/combinations/:combinedId', protect, protectAdmin, removeCombination);
 
 export default router;
