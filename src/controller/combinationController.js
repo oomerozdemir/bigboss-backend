@@ -10,7 +10,8 @@ const productSelect = {
   isOnSale: true,
   imageUrl: true,
   isActive: true,
-  variants: { select: { vImageUrl: true, vImageUrls: true, color: true }, take: 1 },
+  stock: true,
+  variants: { select: { id: true, vImageUrl: true, vImageUrls: true, color: true, size: true, stock: true } },
 };
 
 // Bir ürünün tüm kombinlerini getir (çift yönlü)
